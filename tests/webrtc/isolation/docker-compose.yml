@@ -1,0 +1,18 @@
+name: scramjet-webrtc-isolation
+
+services:
+  server:
+    image: nginx:1.27-alpine
+    networks: [isolated]
+
+  client:
+    image: nicolaka/netshoot:latest
+    command: ["sleep", "infinity"]
+    cap_add: [NET_ADMIN, NET_RAW]
+    networks: [isolated]
+    volumes:
+      - ../../../:/repo
+    working_dir: /repo
+
+networks:
+  isolated:

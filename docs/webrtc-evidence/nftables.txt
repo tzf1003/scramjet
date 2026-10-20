@@ -1,0 +1,13 @@
+table inet scramjet_webrtc {
+	chain output {
+		type filter hook output priority filter; policy drop;
+		ct state established,related accept
+		oif "lo" counter packets 0 bytes 0 accept comment "scramjet-webrtc-loopback"
+		ip daddr 192.168.97.3 tcp dport { 4501, 8080 } counter packets 0 bytes 0 accept comment "scramjet-proxy"
+		ip daddr 192.168.97.3 udp dport 80 counter packets 0 bytes 0 accept comment "turn-udp"
+		ip daddr 192.168.97.3 tcp dport { 80, 443 } counter packets 1 bytes 60 accept comment "turn-tcp-tls"
+		ip daddr 192.168.97.3 udp dport 50160-50200 counter packets 0 bytes 0 accept comment "turn-relay-udp"
+		ip daddr 192.168.97.3 tcp dport 50160-50200 counter packets 0 bytes 0 accept comment "turn-relay-tcp"
+		counter packets 3 bytes 149 drop comment "scramjet-webrtc-default-deny"
+	}
+}

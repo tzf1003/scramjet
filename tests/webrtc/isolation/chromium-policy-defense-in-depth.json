@@ -1,0 +1,4 @@
+{
+	"_comment": "Defence-in-depth only: hides private host candidates but does not block direct public-interface ICE. Use nftables for enforced isolation.",
+	"WebRtcIPHandlingPolicy": "default_public_interface_only"
+}
