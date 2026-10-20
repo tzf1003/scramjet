@@ -7,6 +7,7 @@ import { deepmerge } from "@fastify/deepmerge";
 import {
 	CookieJar,
 	defaultConfig as scramjetDefaultConfig,
+	parseWebrtcCredentialPayload,
 	rewriteUrl,
 	ScramjetFetchHandler,
 	ScramjetHeaders,
@@ -237,6 +238,9 @@ export class Controller {
 
 	private wasmAlreadyFetched = false;
 	private wasmPayload: string | null = null;
+	private webrtcRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	private webrtcRefreshInFlight: Promise<void> | null = null;
+	private webrtcRetryMs = 5_000;
 	private onTabChannelMessage: (e: MessageEvent) => void = (e) => {
 		this.rpc.recieve(e.data);
 	};
@@ -261,6 +265,70 @@ export class Controller {
 		const resp = await fetch(this.config.wasmPath);
 		setWasm(await resp.arrayBuffer());
 		this.wasmAlreadyFetched = true;
+	}
+
+	private scheduleWebrtcRefresh(delayMs: number) {
+		clearTimeout(this.webrtcRefreshTimer);
+		this.webrtcRefreshTimer = setTimeout(
+			() => {
+				void this.refreshWebrtcCredentials().catch((error) => {
+					console.error(
+						"Failed to refresh WebRTC TURN credentials:",
+						error instanceof Error ? error.message : error
+					);
+				});
+			},
+			Math.min(Math.max(0, delayMs), 2_147_483_647)
+		);
+	}
+
+	/**
+	 * Resolve short-lived TURN credentials before frames are created. This removes
+	 * the async credential race at first PeerConnection: every injected realm gets
+	 * a usable iceServers snapshot. Failures are retried and never fall back to
+	 * direct ICE.
+	 */
+	async refreshWebrtcCredentials(): Promise<void> {
+		const webrtc = this.scramjetConfig.webrtc;
+		const credentialEndpoint = webrtc.credentialEndpoint;
+		if (webrtc.mode === "off" || !credentialEndpoint) {
+			return;
+		}
+		if (this.webrtcRefreshInFlight) {
+			return this.webrtcRefreshInFlight;
+		}
+
+		this.webrtcRefreshInFlight = (async () => {
+			try {
+				const endpoint = new URL(credentialEndpoint, location.href);
+				const response = await fetch(endpoint, {
+					cache: "no-store",
+					credentials: "omit",
+					redirect: "error",
+				});
+				if (!response.ok) {
+					throw new Error(`credential endpoint returned ${response.status}`);
+				}
+				const parsed = parseWebrtcCredentialPayload(
+					await response.json(),
+					Date.now()
+				);
+				webrtc.iceServers = parsed.iceServers;
+				webrtc.iceServersExpiresAt = parsed.expiresAt;
+				this.webrtcRetryMs = 5_000;
+				this.scheduleWebrtcRefresh(
+					parsed.ttlMs * webrtc.credentialRefreshRatio
+				);
+			} catch (error) {
+				this.webrtcRetryMs = Math.min(60_000, this.webrtcRetryMs * 2);
+				this.scheduleWebrtcRefresh(this.webrtcRetryMs);
+				throw error;
+			} finally {
+				this.webrtcRefreshInFlight = null;
+			}
+		})();
+
+		return this.webrtcRefreshInFlight;
 	}
 
 	private methods: MethodsDefinition<Controllerbound> = {
@@ -466,6 +534,12 @@ export class Controller {
 			}),
 			this.loadScramjetWasm(),
 			this.loadSavedCookies(true),
+			this.refreshWebrtcCredentials().catch((error) => {
+				console.error(
+					"Failed to prefetch WebRTC TURN credentials:",
+					error instanceof Error ? error.message : error
+				);
+			}),
 		]).then(() => undefined);
 
 		this.rpc = new RpcHelper<Controllerbound, SWbound>(

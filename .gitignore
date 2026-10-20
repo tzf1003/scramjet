@@ -5,3 +5,8 @@ packages/core/rewriter/wasm/out
 packages/core/rewriter/*.js
 packages/core/README.md
 packages/runway/coverage
+tests/webrtc/.env
+tests/webrtc/coturn/certs
+tests/webrtc/artifacts
+tests/webrtc/capture/*.pcap
+tests/webrtc/capture/*.pcapng
