@@ -51,13 +51,13 @@ process from emitting UDP if the browser decides to. That is why:
 
 For a client namespace, the only permitted WebRTC-related flows are:
 
-| Source | Destination | Protocol/port | Purpose |
-| --- | --- | --- | --- |
-| client | Scramjet origin | TCP (443/HTTP) | page, fetch, WebSocket |
-| client | TURN server | UDP/TCP 3478 | TURN allocation, relay traffic |
-| client | TURN server | TCP 5349 | TURN/TLS |
-| client | TURN relay range | UDP 49160-49200 | relayed media/data to the allocated relay port |
-| TURN server | target peer | per allocation | relayed media/data |
+| Source      | Destination      | Protocol/port   | Purpose                                        |
+| ----------- | ---------------- | --------------- | ---------------------------------------------- |
+| client      | Scramjet origin  | TCP (443/HTTP)  | page, fetch, WebSocket                         |
+| client      | TURN server      | UDP/TCP 3478    | TURN allocation, relay traffic                 |
+| client      | TURN server      | TCP 5349        | TURN/TLS                                       |
+| client      | TURN relay range | UDP 49160-49200 | relayed media/data to the allocated relay port |
+| TURN server | target peer      | per allocation  | relayed media/data                             |
 
 All other UDP, including STUN to arbitrary servers and direct ICE to peer host
 candidates, is dropped and counted. TCP egress other than the Scramjet origin and
@@ -83,16 +83,16 @@ deployment uses IP literals.
 
 ## 5. Fail-closed rules
 
-| Event | Required behaviour |
-| --- | --- |
-| TURN down | Connection fails; no host/srflx/prflx candidate is emitted or accepted |
-| TURN credentials invalid/expired | Connection/allocation fails; refresh is attempted; no direct fallback |
-| Credential endpoint down | New connections throw/never connect; retries with backoff |
-| Page calls `setConfiguration({iceTransportPolicy:"all"})` | Sanitised to `relay` + authorised servers; native `getConfiguration()` confirms |
-| Non-relay candidate in local SDP | Reject `setLocalDescription`, close connection |
-| Non-relay selected pair | Close connection, log a security error |
-| `enforced` without verified isolation | Refuse construction (`NotSupportedError`) |
-| Browser lacks the hook coverage | Network rules still drop direct egress; enforcement fails closed at the network layer |
+| Event                                                     | Required behaviour                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| TURN down                                                 | Connection fails; no host/srflx/prflx candidate is emitted or accepted                |
+| TURN credentials invalid/expired                          | Connection/allocation fails; refresh is attempted; no direct fallback                 |
+| Credential endpoint down                                  | New connections throw/never connect; retries with backoff                             |
+| Page calls `setConfiguration({iceTransportPolicy:"all"})` | Sanitised to `relay` + authorised servers; native `getConfiguration()` confirms       |
+| Non-relay candidate in local SDP                          | Reject `setLocalDescription`, close connection                                        |
+| Non-relay selected pair                                   | Close connection, log a security error                                                |
+| `enforced` without verified isolation                     | Refuse construction (`NotSupportedError`)                                             |
+| Browser lacks the hook coverage                           | Network rules still drop direct egress; enforcement fails closed at the network layer |
 
 ## 6. Known limitations and non-claims
 
@@ -122,7 +122,7 @@ An enforced-mode claim requires all of:
 
 1. nftables rules installed and counters observed after a deliberate probe.
 2. Negative control: with rules removed, a direct path is detected.
-3. Positive path: selected candidate pair local type is `relay`, and the relay
+3. Positive path: selected candidate pair local candidate is TURN-backed (`relay`, or `prflx` with a TURN URL), and the relay
    egress is observed at the peer/TURN side.
 4. Fail-closed: blocking TURN yields no connection.
 5. IPv6 probe and cross-realm/iframe probe.

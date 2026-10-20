@@ -1,0 +1,227 @@
+name: WebRTC
+
+on:
+  push:
+    paths:
+      - "packages/core/src/**"
+      - "packages/controller/src/**"
+      - "packages/runway/src/**"
+      - "tests/webrtc/**"
+      - "docs/webrtc-*.md"
+      - ".github/workflows/webrtc.yml"
+  pull_request:
+    paths:
+      - "packages/core/src/**"
+      - "packages/controller/src/**"
+      - "packages/runway/src/**"
+      - "tests/webrtc/**"
+      - "docs/webrtc-*.md"
+      - ".github/workflows/webrtc.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WASM_BINDGEN_VERSION: "0.2.105"
+
+jobs:
+  unit:
+    name: WebRTC policy unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+      - name: Run unit tests
+        run: node --experimental-strip-types --test tests/webrtc/unit/webrtc.test.ts
+
+  relay:
+    name: Real TURN relay + DataChannel
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+
+      - name: Build rewriter wasm and bundles
+        env:
+          RELEASE: "1"
+        run: |
+          pnpm --dir packages/core run rewriter:build
+          pnpm exec rspack build --mode production
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/runway
+
+      - name: Start coturn + credential service
+        run: |
+          sh tests/webrtc/start-test-stack.sh
+          HOST_IP=$(hostname -I | awk '{print $1}')
+          echo "TURN_ALLOWED_PEER_IP=172.29.0.10,172.29.0.1,172.17.0.1,127.0.0.1,${HOST_IP}" >> tests/webrtc/.env
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env up -d --force-recreate coturn
+          mkdir -p tests/webrtc/artifacts
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env logs coturn > tests/webrtc/artifacts/coturn.log
+
+      - name: Hook tests
+        env:
+          TURN_CREDENTIALS_URL: http://127.0.0.1:18081/turn-credentials
+          RUNWAY_BROWSER: chromium
+        working-directory: packages/runway
+        run: pnpm test webrtc-hook --parallel 1
+
+      - name: Real relay DataChannel, media, concurrency
+        env:
+          TURN_CREDENTIALS_URL: http://127.0.0.1:18081/turn-credentials
+          RUNWAY_BROWSER: chromium
+          WEBRTC_FAKE_MEDIA: "1"
+          WEBRTC_EXPOSE_HOST_CANDIDATES: "1"
+        working-directory: packages/runway
+        run: pnpm test webrtc-relay --parallel 1
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p tests/webrtc/artifacts
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env logs > tests/webrtc/artifacts/docker.log || true
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env ps > tests/webrtc/artifacts/docker-ps.txt || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webrtc-relay-logs
+          path: |
+            tests/webrtc/artifacts/
+
+  cross-browser:
+    name: Cross-browser (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    needs: relay
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+      - name: Build bundles
+        env:
+          RELEASE: "1"
+        run: |
+          pnpm --dir packages/core run rewriter:build
+          pnpm exec rspack build --mode production
+      - name: Install Playwright ${{ matrix.browser }}
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+        working-directory: packages/runway
+      - name: Start coturn + credentials
+        run: sh tests/webrtc/start-test-stack.sh
+      - name: Run browser suite
+        env:
+          RUNWAY_BROWSER: ${{ matrix.browser }}
+          WEBRTC_EXPOSE_HOST_CANDIDATES: "1"
+          TURN_CREDENTIALS_URL: http://127.0.0.1:18081/turn-credentials
+        working-directory: packages/runway
+        run: pnpm test webrtc- --parallel 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webrtc-${{ matrix.browser }}-logs
+          path: tests/webrtc/artifacts/
+
+  enforced:
+    name: Enforced isolation (nftables + namespace)
+    runs-on: ubuntu-latest
+    needs: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+
+      - name: Build bundles
+        env:
+          RELEASE: "1"
+        run: |
+          pnpm --dir packages/core run rewriter:build
+          pnpm exec rspack build --mode production
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/runway
+
+      - name: Start coturn + credential service for the client namespace
+        run: |
+          sh tests/webrtc/start-test-stack.sh
+          sed -i 's|^TURN_EXTERNAL_IP=.*|TURN_EXTERNAL_IP=10.200.0.1/172.29.0.10|' tests/webrtc/.env
+          sed -i 's|^TURN_ALLOWED_PEER_IP=.*|TURN_ALLOWED_PEER_IP=172.29.0.10,10.200.0.1,10.200.0.2|' tests/webrtc/.env
+          sed -i 's|^TURN_URLS=.*|TURN_URLS=turn:10.200.0.1:13478?transport=udp,turn:10.200.0.1:13478?transport=tcp|' tests/webrtc/.env
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env up -d --force-recreate
+          curl -fsS http://127.0.0.1:18081/healthz
+
+      - name: Run browser inside the isolated namespace
+        env:
+          TURN_CREDENTIALS_URL: http://10.200.0.1:18081/turn-credentials
+          RUNWAY_BROWSER: chromium
+          RUNWAY_CHROMIUM_ARGS: "--no-sandbox"
+        run: |
+          sudo env PATH="$PATH" \
+            TURN_HOST=10.200.0.1 TURN_PORT=13478 \
+            SCRAMJET_HOST=10.200.0.1 SCRAMJET_PORT=4500 \
+            TARGET_TCP_RANGE=10000-65535 \
+            UNAUTHORIZED_UDP_TARGET=1.1.1.1:19302 \
+            EVIDENCE_DIR="$PWD/tests/webrtc/artifacts" \
+            tests/webrtc/isolation/run-in-netns.sh -- \
+            env TURN_CREDENTIALS_URL="$TURN_CREDENTIALS_URL" \
+              PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/ms-playwright" \
+              pnpm --dir packages/runway test webrtc-relay --parallel 1
+
+      - name: Collect isolation evidence
+        if: always()
+        run: |
+          mkdir -p tests/webrtc/artifacts
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env logs > tests/webrtc/artifacts/docker.log 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webrtc-isolation-logs
+          path: tests/webrtc/artifacts/

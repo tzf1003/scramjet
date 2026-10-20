@@ -43,34 +43,34 @@ The fork was compared against `MercuryWorkshop/scramjet` `main` at the same comm
 
 Relevant mechanisms:
 
-| Area | Location | Finding |
-| --- | --- | --- |
-| Client bootstrap/hooks | `packages/core/src/client/client.ts` | `hook()` loads every `client/{dom,worker,shared}/**/*.ts` module, sorted by `order`; modules run before page scripts. |
-| Hook primitives | `ScramjetClient.Proxy` / `Trap` | Function/constructor proxies and property traps; preserves `prototype` identity. |
-| Injection timing | `packages/core/src/shared/rewriters/html.ts` | Injection scripts are prepended to `<head>` (or document start for quirky docs). |
-| Realm coverage | `packages/controller/src/inject.ts`, `client/dom/element.ts` | Client is installed in top-level documents, proxied iframes, `about:blank`/`srcdoc` subcontexts (`hookSubcontext`), and workers (`getWorkerInjectScripts`). |
-| WebSocket hook | `packages/core/src/client/shared/requests/websocket.ts` | Full fake WebSocket over `ProxyTransport`; no UDP/datagram path. |
-| Transports | `packages/controller/src/index.ts`, `@mercuryworkshop/proxy-transports` | `request()` + `connect()` only. No UDP. |
-| Wisp | `@mercuryworkshop/wisp-js@0.4.1` | UDP extension exists server/client-side; unused by Scramjet. |
-| Config | `packages/core/src/types.ts`, `packages/core/src/index.ts` | `ScramjetConfig` is JSON-serialised into every injected realm; ideal for a trusted WebRTC policy snapshot. |
-| Tests | `packages/runway` | Playwright + Scramjet harness, adversarial JS tests, `basicTest`/`htmlTest`/`playwrightTest`. |
-| Existing WebRTC code | — | None. `runway/src/tests/adversarial/modern-apis.ts` only asserts `typeof RTCPeerConnection === "function"`. |
+| Area                   | Location                                                                | Finding                                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client bootstrap/hooks | `packages/core/src/client/client.ts`                                    | `hook()` loads every `client/{dom,worker,shared}/**/*.ts` module, sorted by `order`; modules run before page scripts.                                       |
+| Hook primitives        | `ScramjetClient.Proxy` / `Trap`                                         | Function/constructor proxies and property traps; preserves `prototype` identity.                                                                            |
+| Injection timing       | `packages/core/src/shared/rewriters/html.ts`                            | Injection scripts are prepended to `<head>` (or document start for quirky docs).                                                                            |
+| Realm coverage         | `packages/controller/src/inject.ts`, `client/dom/element.ts`            | Client is installed in top-level documents, proxied iframes, `about:blank`/`srcdoc` subcontexts (`hookSubcontext`), and workers (`getWorkerInjectScripts`). |
+| WebSocket hook         | `packages/core/src/client/shared/requests/websocket.ts`                 | Full fake WebSocket over `ProxyTransport`; no UDP/datagram path.                                                                                            |
+| Transports             | `packages/controller/src/index.ts`, `@mercuryworkshop/proxy-transports` | `request()` + `connect()` only. No UDP.                                                                                                                     |
+| Wisp                   | `@mercuryworkshop/wisp-js@0.4.1`                                        | UDP extension exists server/client-side; unused by Scramjet.                                                                                                |
+| Config                 | `packages/core/src/types.ts`, `packages/core/src/index.ts`              | `ScramjetConfig` is JSON-serialised into every injected realm; ideal for a trusted WebRTC policy snapshot.                                                  |
+| Tests                  | `packages/runway`                                                       | Playwright + Scramjet harness, adversarial JS tests, `basicTest`/`htmlTest`/`playwrightTest`.                                                               |
+| Existing WebRTC code   | —                                                                       | None. `runway/src/tests/adversarial/modern-apis.ts` only asserts `typeof RTCPeerConnection === "function"`.                                                 |
 
 ### Capability matrix before this work
 
-| Capability | State | Root cause |
-| --- | --- | --- |
-| `RTCPeerConnection` API | Native, unhooked | No module |
-| Relay-enforced ICE | Missing | No config/hook |
-| Remote ICE server suppression | Missing | No hook |
-| `setConfiguration` re-arm protection | Missing | No hook |
-| Credential issuance | Missing | No TURN deployment |
-| Selected candidate pair verification | Missing | No diagnostics |
-| Cross-realm coverage | Available infrastructure | Hooks run per realm, but no WebRTC policy |
-| Worker WebRTC | Native where supported | Client injected for proxied/blob workers; no policy |
-| DataChannel/media | Native | Untouched by this work |
-| Wisp UDP for WebRTC | Not possible | Transport + browser network stack boundary |
-| OS-level egress control | Missing | Deployment concern, scripts added under `tests/webrtc/isolation` |
+| Capability                           | State                    | Root cause                                                       |
+| ------------------------------------ | ------------------------ | ---------------------------------------------------------------- |
+| `RTCPeerConnection` API              | Native, unhooked         | No module                                                        |
+| Relay-enforced ICE                   | Missing                  | No config/hook                                                   |
+| Remote ICE server suppression        | Missing                  | No hook                                                          |
+| `setConfiguration` re-arm protection | Missing                  | No hook                                                          |
+| Credential issuance                  | Missing                  | No TURN deployment                                               |
+| Selected candidate pair verification | Missing                  | No diagnostics                                                   |
+| Cross-realm coverage                 | Available infrastructure | Hooks run per realm, but no WebRTC policy                        |
+| Worker WebRTC                        | Native where supported   | Client injected for proxied/blob workers; no policy              |
+| DataChannel/media                    | Native                   | Untouched by this work                                           |
+| Wisp UDP for WebRTC                  | Not possible             | Transport + browser network stack boundary                       |
+| OS-level egress control              | Missing                  | Deployment concern, scripts added under `tests/webrtc/isolation` |
 
 ## 3. Modes
 
@@ -82,21 +82,25 @@ change the policy snapshot.
 type WebrtcMode = "off" | "relay" | "enforced";
 
 interface ScramjetWebrtcConfig {
-  mode: WebrtcMode;
-  iceServers: { urls: string | string[]; username?: string; credential?: string }[];
-  credentialEndpoint: string | null;
-  credentialRefreshRatio: number; // 0.1 .. 0.95
-  failClosed: boolean;
-  diagnostics: boolean;
-  networkIsolationVerified: boolean;
+	mode: WebrtcMode;
+	iceServers: {
+		urls: string | string[];
+		username?: string;
+		credential?: string;
+	}[];
+	credentialEndpoint: string | null;
+	credentialRefreshRatio: number; // 0.1 .. 0.95
+	failClosed: boolean;
+	diagnostics: boolean;
+	networkIsolationVerified: boolean;
 }
 ```
 
-| Mode | API behaviour | Network boundary | Intended use |
-| --- | --- | --- | --- |
-| `off` | No hook installed | None | Default; unchanged Scramjet behaviour |
-| `relay` | Force `iceTransportPolicy: "relay"`, replace all ICE servers with the authorised TURN set, reject non-relay local candidates/pairs | TURN only as far as the browser obeys; **not** an OS boundary | Web-only deployments, development |
-| `enforced` | Same as `relay`, plus refuses to operate unless `networkIsolationVerified` is attested, and closes any connection whose selected local candidate is not `relay` | TURN only **and** OS/browser policy must block all other egress | Controlled Linux browser/container |
+| Mode       | API behaviour                                                                                                                                                   | Network boundary                                                | Intended use                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
+| `off`      | No hook installed                                                                                                                                               | None                                                            | Default; unchanged Scramjet behaviour |
+| `relay`    | Force `iceTransportPolicy: "relay"`, replace all ICE servers with the authorised TURN set, reject non-relay local candidates/pairs                              | TURN only as far as the browser obeys; **not** an OS boundary   | Web-only deployments, development     |
+| `enforced` | Same as `relay`, plus refuses to operate unless `networkIsolationVerified` is attested, and closes any connection whose selected local candidate is not TURN-backed | TURN only **and** OS/browser policy must block all other egress | Controlled Linux browser/container    |
 
 `relay` is honest about its limit: a malicious page cannot re-enable direct ICE
 through the hooked APIs, but an unpatched browser vulnerability or a realm the hook
@@ -153,8 +157,11 @@ Defence in depth, not SDP rewriting:
 - ICE candidate events are inspected; a non-relay local candidate closes the
   connection.
 - On connected/completed, native `getStats()` is polled a few times. The selected
-  candidate pair's **local** candidate type must be `relay`. Anything else closes
-  the connection in relay/enforced mode.
+  candidate pair's **local** candidate must be TURN-backed: `candidateType:
+  "relay"`, or `candidateType: "prflx"` with a `url` of `turn:`/`turns:` and a
+  `relayProtocol`. Browsers can report a relayed transport as prflx; accepting it
+  only with the TURN URL preserves fail-closed behaviour. Anything else closes the
+  connection in relay/enforced mode.
 - Failures are logged through `dbg.error` when diagnostics are enabled. No synthetic
   success events are dispatched.
 
@@ -211,25 +218,25 @@ Coturn is the relay. It is not a proxy for HTTP and it is not Wisp.
 
 ## 7. Test architecture
 
-| Layer | Location | What it proves |
-| --- | --- | --- |
-| Pure unit | `tests/webrtc/unit` | Config sanitisation, credential parsing, SDP candidate parsing, selected-pair evaluation |
-| Scramjet hook | `packages/runway/src/tests/webrtc` | Hooks are installed in real Chromium realms; API semantics preserved; direct config attempts are neutralised; fail-closed |
-| TURN integration | `packages/runway/src/tests/webrtc` + coturn | Real ICE/DTLS/SCTP through coturn: DataChannel, media, ICE restart, concurrency |
-| Network isolation | `tests/webrtc/isolation` | nftables blocks direct UDP/STUN; negative control detects leaks |
-| Capture | `tests/webrtc/capture` | PCAP + coturn/selected-pair JSON evidence |
+| Layer             | Location                                    | What it proves                                                                                                            |
+| ----------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Pure unit         | `tests/webrtc/unit`                         | Config sanitisation, credential parsing, SDP candidate parsing, selected-pair evaluation                                  |
+| Scramjet hook     | `packages/runway/src/tests/webrtc`          | Hooks are installed in real Chromium realms; API semantics preserved; direct config attempts are neutralised; fail-closed |
+| TURN integration  | `packages/runway/src/tests/webrtc` + coturn | Real ICE/DTLS/SCTP through coturn: DataChannel, media, ICE restart, concurrency                                           |
+| Network isolation | `tests/webrtc/isolation`                    | nftables blocks direct UDP/STUN; negative control detects leaks                                                           |
+| Capture           | `tests/webrtc/capture`                      | PCAP + coturn/selected-pair JSON evidence                                                                                 |
 
 No mock ICE/DTLS stack is used. Tests that cannot run in a given environment are
 reported as unverified, not passed.
 
 ## 8. Failure semantics
 
-| Condition | Behaviour |
-| --- | --- |
-| `relay`/`enforced`, no TURN servers, `failClosed` | PeerConnection constructor throws `NotSupportedError` |
-| TURN unreachable | Native ICE fails; connection never reaches `connected`; no direct fallback |
-| Invalid/expired credentials | TURN allocation fails; refresh attempts; no direct fallback |
-| Non-relay local candidate in SDP | `setLocalDescription` rejects, connection closed |
-| Non-relay selected pair | Connection closed and error logged |
-| `enforced` without attestation | PeerConnection constructor throws `NotSupportedError` |
-| Credential endpoint fetch fails | Retry with backoff; new connections fail closed until resolved |
+| Condition                                         | Behaviour                                                                  |
+| ------------------------------------------------- | -------------------------------------------------------------------------- |
+| `relay`/`enforced`, no TURN servers, `failClosed` | PeerConnection constructor throws `NotSupportedError`                      |
+| TURN unreachable                                  | Native ICE fails; connection never reaches `connected`; no direct fallback |
+| Invalid/expired credentials                       | TURN allocation fails; refresh attempts; no direct fallback                |
+| Non-relay local candidate in SDP                  | `setLocalDescription` rejects, connection closed                           |
+| Non-relay selected pair                           | Connection closed and error logged                                         |
+| `enforced` without attestation                    | PeerConnection constructor throws `NotSupportedError`                      |
+| Credential endpoint fetch fails                   | Retry with backoff; new connections fail closed until resolved             |
