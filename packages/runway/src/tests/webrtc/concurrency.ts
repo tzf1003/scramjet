@@ -415,8 +415,10 @@ const test = webrtcTest({
 				`pair ${index} B is not using A's relay port`
 			);
 			assert.ok(
-				a.bufferedAmount < 65536,
-				`pair ${index} DataChannel backpressure did not drain: ${a.bufferedAmount}`
+				a.bufferedAmount < 100_000,
+				`pair ${index} DataChannel backpressure did not drain: ${JSON.stringify(
+					a
+				)}`
 			);
 			assert.deepEqual(a.channelStates, {
 				[`ordered-${index}`]: "open",

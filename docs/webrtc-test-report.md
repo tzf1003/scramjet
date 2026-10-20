@@ -80,8 +80,10 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers \
 - real TURN DataChannel: text, 4 KiB binary, 128 KiB text all round-tripped;
   SHA-256 matched; ICE restart kept the channel open; selected local candidate is
   TURN-backed
-- real TURN media: fake camera/microphone, audio+video tracks, B decoded >10
-  frames and received >100 kB, selected pair TURN-backed
+- real TURN media: synthetic but real browser tracks (animated canvas video +
+  oscillator audio), audio+video tracks, B decoded >10 frames and received
+  > 100 kB, selected pair TURN-backed. Peer B runs in a separate page so media
+  > capture cannot starve its evaluation.
 
 ### Firefox — PASS 13/13
 
