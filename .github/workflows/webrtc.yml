@@ -239,6 +239,17 @@ jobs:
               PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/ms-playwright" \
               pnpm --dir packages/runway test webrtc-relay-datachannel --parallel 1
 
+      - name: Analyze client egress
+        if: always()
+        run: |
+          docker run --rm --network none \
+            -v "$PWD/tests/webrtc/artifacts:/evidence" \
+            -v "$PWD/tests/webrtc/capture:/scripts:ro" \
+            nicolaka/netshoot python3 /scripts/check-client-egress.py \
+            /evidence/client.pcap --policy /evidence/policy.json \
+            --receipt /evidence/isolation.json \
+            --output /evidence/client-egress.json
+
       - name: Collect isolation evidence
         if: always()
         run: |
