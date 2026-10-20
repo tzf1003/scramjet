@@ -10,3 +10,4 @@ tests/webrtc/coturn/certs
 tests/webrtc/artifacts
 tests/webrtc/capture/*.pcap
 tests/webrtc/capture/*.pcapng
+__pycache__/
