@@ -71,7 +71,7 @@ def main():
                             WEBRTC_INSECURE_TLS="1" if args.transport == "tls" else "0", WEBRTC_RUN_ID=run_id,
                             WEBRTC_EVIDENCE_DIR=str(output))
             started = time.monotonic()
-            invocation = ["npx", "--offline", "node@24", "--experimental-strip-types", "--no-warnings", "src/index.ts", args.filter, "--parallel", str(args.parallel)]
+            invocation = ["npx", "-y", "node@24", "--experimental-strip-types", "--no-warnings", "src/index.ts", args.filter, "--parallel", str(args.parallel)]
             log = output / f"{browser}-{args.transport}.log"
             with log.open("w") as stream:
                 result = command(*invocation, cwd=ROOT / "packages/runway", env=test_env, stdout=stream, stderr=subprocess.STDOUT)

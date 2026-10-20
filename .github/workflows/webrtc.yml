@@ -116,6 +116,15 @@ jobs:
         working-directory: packages/runway
         run: pnpm test webrtc-relay --parallel 1
 
+      - name: TURN transport matrix (UDP/TCP/TLS)
+        run: |
+          for transport in udp tcp tls; do
+            python3 tests/webrtc/run-browser-suite.py \
+              --browser chromium --filter webrtc-relay-datachannel \
+              --transport "$transport" \
+              --output "tests/webrtc/artifacts/transport-$transport"
+          done
+
       - name: Collect logs
         if: always()
         run: |
