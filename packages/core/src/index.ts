@@ -6,6 +6,7 @@ import "./global.d";
 import { atob } from "@/shared/snapshot";
 import { setWasm } from "@rewriters/wasm";
 import { ScramjetVersionInfo, ScramjetConfig } from "./types";
+import { defaultWebrtcConfig } from "./shared/webrtc";
 
 declare const VERSION: string;
 declare const COMMITHASH: string;
@@ -48,6 +49,10 @@ export const defaultConfig: ScramjetConfig = {
 	},
 	siteFlags: {},
 	maskedfiles: [],
+	webrtc: {
+		...defaultWebrtcConfig,
+		iceServers: [],
+	},
 };
 
 export const defaultConfigDev: ScramjetConfig = {

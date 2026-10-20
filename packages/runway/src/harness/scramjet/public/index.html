@@ -63,7 +63,7 @@
 				statusEl.textContent = "Initializing controller...";
 
 				const innerTransport = new LibcurlClient({
-					wisp: "ws://localhost:4501/",
+					wisp: `ws://${location.hostname}:4501/`,
 				});
 				const transport = new RunwayCleartextHttpsTransport(innerTransport);
 
@@ -77,6 +77,14 @@
 					transport,
 				});
 				window.__runwayController = controller;
+				window.__runwaySetWebrtcConfig = (config) => {
+					controller.scramjetConfig.webrtc = {
+						...controller.scramjetConfig.webrtc,
+						...config,
+					};
+				};
+				window.__runwayRefreshWebrtcCredentials = () =>
+					controller.refreshWebrtcCredentials();
 
 				await controller.ready;
 

@@ -1,3 +1,5 @@
+import type { ScramjetWebrtcConfig } from "./shared/webrtc";
+
 /**
  * Version information for the current Scramjet build.
  * Contains both the semantic version string and the git commit hash for build identification.
@@ -48,6 +50,11 @@ export interface ScramjetConfig {
 	flags: ScramjetFlags;
 	siteFlags: Record<string, Partial<ScramjetFlags>>;
 	maskedfiles: string[];
+	/**
+	 * WebRTC network policy. Set by the trusted controller; proxied pages cannot
+	 * modify it. See docs/webrtc-architecture.md.
+	 */
+	webrtc: ScramjetWebrtcConfig;
 }
 
 /**

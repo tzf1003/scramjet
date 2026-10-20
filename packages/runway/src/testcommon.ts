@@ -18,6 +18,8 @@ export type DirectTestContext = {
 
 export type Test = {
 	name: string;
+	/** Browsers this test is known to support (default: all). */
+	browsers?: string[];
 	port: number;
 	/**
 	 * Hostname used in the URL passed to the harness (default `localhost`).

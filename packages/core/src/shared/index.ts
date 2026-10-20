@@ -11,6 +11,7 @@ export * from "./headers";
 export * from "./htmlRules";
 export * from "./mime";
 export * from "./rewriters";
+export * from "./webrtc";
 
 export function flagEnabled(
 	flag: keyof ScramjetFlags,

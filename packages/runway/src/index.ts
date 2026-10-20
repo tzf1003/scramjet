@@ -2,8 +2,8 @@ import { glob, mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { chromium } from "playwright";
-import type { Page, Browser, BrowserContext } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
+import type { Page, Browser, BrowserContext, LaunchOptions } from "playwright";
 import v8toIstanbul from "v8-to-istanbul";
 import istanbulCoverage from "istanbul-lib-coverage";
 import {
@@ -696,7 +696,10 @@ async function main() {
 		}
 	}
 
-	const allTests = await discoverTests();
+	const browserName = process.env.RUNWAY_BROWSER ?? "chromium";
+	const allTests = (await discoverTests()).filter(
+		(test) => !test.browsers || test.browsers.includes(browserName)
+	);
 
 	// Filter tests if a pattern is provided
 	const tests = testFilter
@@ -752,21 +755,65 @@ async function main() {
 			"./harness/scramjet/index.ts"
 		);
 		await startHarness();
-		scramjetUrl = `http://localhost:${HARNESS_PORT}`;
+		const harnessHost = process.env.RUNWAY_HARNESS_HOST ?? "localhost";
+		scramjetUrl = `http://${harnessHost}:${HARNESS_PORT}`;
 		console.log(`📡 Scramjet harness running at ${scramjetUrl}`);
 		if (needsBareHarness) {
 			const { startBareHarness, BARE_PORT } = await import(
 				"./harness/bare/index.ts"
 			);
 			await startBareHarness();
-			bareUrl = `http://localhost:${BARE_PORT}`;
+			bareUrl = `http://${harnessHost}:${BARE_PORT}`;
 			console.log(`📡 Bare harness running at ${bareUrl}`);
 		}
 		console.log();
 
-		browser = await chromium.launch({
+		const browserType =
+			browserName === "firefox"
+				? firefox
+				: browserName === "webkit"
+					? webkit
+					: browserName === "chromium"
+						? chromium
+						: null;
+		if (!browserType) {
+			throw new Error(`unknown RUNWAY_BROWSER: ${browserName}`);
+		}
+		const launchOptions: LaunchOptions = {
 			headless: process.env.HEADED !== "1",
-		});
+		};
+		if (browserName === "chromium") {
+			const args: string[] = [];
+			if (process.env.WEBRTC_FAKE_MEDIA === "1") {
+				args.push(
+					"--use-fake-device-for-media-stream",
+					"--use-fake-ui-for-media-stream",
+					"--autoplay-policy=no-user-gesture-required"
+				);
+			}
+			if (process.env.WEBRTC_INSECURE_TLS === "1") {
+				args.push("--ignore-certificate-errors", "--allow-insecure-localhost");
+			}
+			if (process.env.WEBRTC_EXPOSE_HOST_CANDIDATES === "1") {
+				args.push("--disable-features=WebRtcHideLocalIpsWithMdns");
+			}
+			const extraArgs =
+				process.env.RUNWAY_CHROMIUM_ARGS?.split(/\s+/).filter(Boolean);
+			if (extraArgs) args.push(...extraArgs);
+			if (args.length > 0) launchOptions.args = args;
+		} else if (browserName === "firefox") {
+			launchOptions.firefoxUserPrefs = {
+				"media.navigator.streams.fake": true,
+				"media.navigator.permission.disabled": true,
+				"media.autoplay.default": 0,
+			};
+			if (process.env.WEBRTC_EXPOSE_HOST_CANDIDATES === "1") {
+				launchOptions.firefoxUserPrefs[
+					"media.peerconnection.ice.obfuscate_host_addresses"
+				] = false;
+			}
+		}
+		browser = await browserType.launch(launchOptions);
 	} else {
 		console.log("🧪 Direct tests only: skipping harness/browser startup\n");
 	}
@@ -902,14 +949,14 @@ async function main() {
 						serverResult = new Promise<TestResult>((resolve) => {
 							serverResultResolve = resolve;
 						});
-						await test.start({
-							pass: async (message?: string, details?: any) =>
-								serverResultResolve({ status: "pass", message, details }),
-							fail: async (message?: string, details?: any) =>
-								serverResultResolve({ status: "fail", message, details }),
-						});
-						started = true;
 					}
+					await test.start({
+						pass: async (message?: string, details?: any) =>
+							serverResultResolve({ status: "pass", message, details }),
+						fail: async (message?: string, details?: any) =>
+							serverResultResolve({ status: "fail", message, details }),
+					});
+					started = true;
 
 					const scramjetPromise = runTestOnHarness(
 						testPages.scramjet.page,
@@ -982,7 +1029,7 @@ async function main() {
 					message: error instanceof Error ? error.message : String(error),
 				};
 			} finally {
-				if (!test.directFn && !test.playwrightFn && started) {
+				if (!test.directFn && started) {
 					try {
 						await test.stop();
 					} catch (error) {
