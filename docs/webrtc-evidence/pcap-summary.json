@@ -1,0 +1,20 @@
+{
+	"capture": "tests/webrtc/capture/turn.pcap (gitignored), captured inside the coturn container network namespace",
+	"test": "webrtc-relay-datachannel-ice-restart (Chromium)",
+	"command": "tcpdump -i any -nn -w /capture/turn.pcap 'udp or tcp port 13478 or tcp port 15349 or udp portrange 50160-50200'",
+	"total_packets": 1483,
+	"stun_messages": {
+		"binding_request_0x0001": 32,
+		"allocate_request_0x0016": 34,
+		"allocate_success_0x0103": 8,
+		"create_permission_request_0x0008": 21,
+		"channel_bind_request_0x0009": 2,
+		"refresh_request_0x0004_or_other": "remaining STUN types in the capture"
+	},
+	"turn_udp_control_packets": 653,
+	"turn_tcp_control_packets": 345,
+	"turn_tls_packets": 39,
+	"relay_udp_packets_50160_50200": 567,
+	"dtls_packets": 449,
+	"notes": "The capture is taken in coturn's namespace, so every packet is either TURN control or relayed traffic. DTLS handshake/application data and relayed UDP prove the media/DataChannel path traversed the relay. Direct STUN to arbitrary servers is not visible here; that is covered by the isolation nftables test and the candidate assertions."
+}
