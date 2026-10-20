@@ -781,6 +781,9 @@ async function main() {
 		}
 		const launchOptions: LaunchOptions = {
 			headless: process.env.HEADED !== "1",
+			...(process.env.RUNWAY_BROWSER_EXECUTABLE
+				? { executablePath: process.env.RUNWAY_BROWSER_EXECUTABLE }
+				: {}),
 		};
 		if (browserName === "chromium") {
 			const args: string[] = [];
@@ -1241,6 +1244,29 @@ async function main() {
 	const passed = results.filter((r) => r.result.status === "pass").length;
 	const failed = results.filter((r) => r.result.status === "fail").length;
 	const errors = results.filter((r) => r.result.status === "error").length;
+	if (process.env.WEBRTC_EVIDENCE_DIR) {
+		await mkdir(process.env.WEBRTC_EVIDENCE_DIR, { recursive: true });
+		await writeFile(
+			path.join(process.env.WEBRTC_EVIDENCE_DIR, `${browserName}-results.json`),
+			JSON.stringify(
+				{
+					runId: process.env.WEBRTC_RUN_ID,
+					browser: browserName,
+					mode: process.env.WEBRTC_TEST_MODE ?? "relay",
+					passed,
+					failed,
+					errors,
+					tests: results.map((entry) => ({
+						name: entry.test.name,
+						result: entry.result,
+						durationMs: entry.duration,
+					})),
+				},
+				null,
+				2
+			) + "\n"
+		);
+	}
 
 	console.log(
 		`\n✅ ${passed} passed | ❌ ${failed} failed | 💥 ${errors} errors\n`

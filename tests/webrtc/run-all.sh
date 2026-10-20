@@ -8,6 +8,10 @@ root=$(CDPATH= cd -- "$dir/../.." && pwd)
 
 echo "== unit policy tests =="
 node --experimental-strip-types --test "$dir/unit/webrtc.test.ts"
+node --test "$dir/unit/credentials.test.mjs"
+
+echo "== quality regression gate =="
+node "$dir/check-quality.mjs"
 
 echo "== coturn + credential service =="
 sh "$dir/start-test-stack.sh"

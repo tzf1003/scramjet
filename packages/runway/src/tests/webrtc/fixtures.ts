@@ -71,7 +71,11 @@ export async function createSignaling(): Promise<Signaling> {
 	});
 
 	const listening = Promise.withResolvers<void>();
-	server.listen(0, "0.0.0.0", listening.resolve);
+	server.listen(
+		Number(process.env.WEBRTC_SIGNAL_PORT ?? 0),
+		"0.0.0.0",
+		listening.resolve
+	);
 	await listening.promise;
 
 	return {

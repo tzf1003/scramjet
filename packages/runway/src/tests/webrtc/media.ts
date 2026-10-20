@@ -201,7 +201,9 @@ const test = webrtcTest({
 						`peer B media timed out: ${pc.connectionState}/${pc.iceConnectionState}`
 					);
 				});
-				return await Promise.race([done.promise, timeout]);
+				return await Promise.race([done.promise, timeout]).finally(() =>
+					pc.close()
+				);
 			},
 			{ url: signalUrl, iceServers: config.iceServers }
 		);
@@ -385,7 +387,9 @@ const test = webrtcTest({
 					`peer A media timed out: ${pc.connectionState}/${pc.iceConnectionState}/${channel.readyState}`
 				);
 			});
-			return await Promise.race([done.promise, timeout]);
+			return await Promise.race([done.promise, timeout]).finally(() =>
+				pc.close()
+			);
 		});
 
 		const [a, b] = await Promise.all([peerA, peerB]);

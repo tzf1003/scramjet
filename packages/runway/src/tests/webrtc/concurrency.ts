@@ -10,7 +10,7 @@ import {
 	type WebrtcTestConfig,
 } from "./helpers.ts";
 
-const PAIRS = 2;
+const PAIRS = Number(process.env.WEBRTC_CONCURRENCY_PAIRS ?? 2);
 const config: WebrtcTestConfig = {
 	mode: "relay",
 	iceServers: [],
@@ -226,7 +226,9 @@ const test = webrtcTest({
 							`A${index} timed out: ${pc.connectionState}/${pc.iceConnectionState} echoes=${echoes.size}`
 						);
 					});
-					return await Promise.race([pairDone.promise, timeout]);
+					return await Promise.race([pairDone.promise, timeout]).finally(() =>
+						pc.close()
+					);
 				}
 
 				return Promise.all(
@@ -263,9 +265,63 @@ const test = webrtcTest({
 						iceTransportPolicy: "relay",
 					});
 					const channels = new Map<string, RTCDataChannel>();
+					const pairDone = Promise.withResolvers<{
+						remoteType: string | null;
+						remotePort: number | null;
+						connectionState: string;
+						received: number;
+					}>();
 					const addChannel = (channel: RTCDataChannel) => {
 						channels.set(channel.label, channel);
 						channel.onmessage = (event) => {
+							if (
+								typeof event.data === "string" &&
+								event.data.startsWith("big-")
+							) {
+								void (async () => {
+									const report = await pc.getStats();
+									const byId: Record<string, Record<string, unknown>> = {};
+									report.forEach((stat, id) => {
+										byId[id] = stat as unknown as Record<string, unknown>;
+									});
+									let candidatePair: Record<string, unknown> | undefined;
+									for (const stat of Object.values(byId)) {
+										if (
+											stat.type === "transport" &&
+											typeof stat.selectedCandidatePairId === "string"
+										) {
+											candidatePair = byId[stat.selectedCandidatePairId];
+										}
+									}
+									if (!candidatePair) {
+										for (const stat of Object.values(byId)) {
+											if (
+												stat.type === "candidate-pair" &&
+												(stat.selected === true ||
+													(stat.state === "succeeded" &&
+														stat.nominated === true))
+											) {
+												candidatePair = stat;
+											}
+										}
+									}
+									const remote = candidatePair?.remoteCandidateId
+										? byId[String(candidatePair.remoteCandidateId)]
+										: undefined;
+									channel.send(event.data);
+									setTimeout(
+										() =>
+											pairDone.resolve({
+												remoteType: (remote?.candidateType as string) ?? null,
+												remotePort: (remote?.port as number) ?? null,
+												connectionState: pc.connectionState,
+												received: channels.size,
+											}),
+										100
+									);
+								})();
+								return;
+							}
 							channel.send(event.data);
 						};
 					};
@@ -285,12 +341,6 @@ const test = webrtcTest({
 							})
 						);
 					};
-					const pairDone = Promise.withResolvers<{
-						remoteType: string | null;
-						remotePort: number | null;
-						connectionState: string;
-						received: number;
-					}>();
 					const remoteCandidates: RTCIceCandidateInit[] = [];
 					let remoteDescriptionSet = false;
 					const flushCandidates = async () => {
@@ -327,60 +377,14 @@ const test = webrtcTest({
 					};
 					for (const event of pendingSignals) void signalHandler(event);
 
-					for (let attempt = 0; attempt < 150; attempt += 1) {
-						received.clear();
-						const report = await pc.getStats();
-						const byId: Record<string, Record<string, unknown>> = {};
-						report.forEach((stat, id) => {
-							byId[id] = stat as unknown as Record<string, unknown>;
-						});
-						let candidatePair: Record<string, unknown> | undefined;
-						for (const stat of Object.values(byId)) {
-							if (
-								stat.type === "transport" &&
-								typeof stat.selectedCandidatePairId === "string"
-							) {
-								candidatePair = byId[stat.selectedCandidatePairId];
-							}
-						}
-						if (!candidatePair) {
-							for (const stat of Object.values(byId)) {
-								if (
-									stat.type === "candidate-pair" &&
-									(stat.selected === true ||
-										(stat.state === "succeeded" && stat.nominated === true))
-								) {
-									candidatePair = stat;
-								}
-							}
-						}
-						const remote = candidatePair?.remoteCandidateId
-							? byId[String(candidatePair.remoteCandidateId)]
-							: undefined;
-						for (const channel of channels.values()) {
-							if (channel.readyState === "open") received.add(channel.label);
-						}
-						if (
-							received.size === channels.size &&
-							pc.connectionState === "connected"
-						) {
-							pairDone.resolve({
-								remoteType: (remote?.candidateType as string) ?? null,
-								remotePort: (remote?.port as number) ?? null,
-								connectionState: pc.connectionState,
-								received: received.size,
-							});
-							break;
-						}
-						await tick(200);
-					}
-
 					const timeout = tick(30_000).then(() => {
 						throw new Error(
 							`B${index} timed out: ${pc.connectionState}/${pc.iceConnectionState} channels=${channels.size}`
 						);
 					});
-					return await Promise.race([pairDone.promise, timeout]);
+					return await Promise.race([pairDone.promise, timeout]).finally(() =>
+						pc.close()
+					);
 				}
 
 				return Promise.all(

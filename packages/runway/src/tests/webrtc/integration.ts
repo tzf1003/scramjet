@@ -45,6 +45,7 @@ const test = webrtcTest({
 		await signaling?.close();
 	},
 	async fn(ctx, frame) {
+		console.log(`WebRTC runtime policy mode: ${config.mode}`);
 		const targetHost = process.env.RUNWAY_TEST_HOST ?? "localhost";
 		if (!signaling) throw new Error("signaling server did not start");
 		const signalUrl = `ws://${targetHost}:${signaling.port}/signal?role=B`;
@@ -335,7 +336,9 @@ const test = webrtcTest({
 					`peer A timed out: ${JSON.stringify({ ...describe(), pairs })}`
 				);
 			});
-			return await Promise.race([done.promise, timeout]);
+			return await Promise.race([done.promise, timeout]).finally(() =>
+				pc.close()
+			);
 		});
 
 		const peerB = ctx.page.evaluate(
@@ -520,7 +523,9 @@ const test = webrtcTest({
 				const timeout = tick(45_000).then(() => {
 					throw new Error(`peer B timed out: ${JSON.stringify(describe())}`);
 				});
-				return await Promise.race([done.promise, timeout]);
+				return await Promise.race([done.promise, timeout]).finally(() =>
+					pc.close()
+				);
 			},
 			{ url: signalUrl, iceServers: config.iceServers }
 		);
