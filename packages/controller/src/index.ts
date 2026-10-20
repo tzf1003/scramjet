@@ -268,7 +268,7 @@ export class Controller {
 	}
 
 	private scheduleWebrtcRefresh(delayMs: number) {
-		clearTimeout(this.webrtcRefreshTimer);
+		if (this.webrtcRefreshTimer !== null) clearTimeout(this.webrtcRefreshTimer);
 		this.webrtcRefreshTimer = setTimeout(
 			() => {
 				void this.refreshWebrtcCredentials().catch((error) => {
@@ -303,7 +303,7 @@ export class Controller {
 				const endpoint = new URL(credentialEndpoint, location.href);
 				const response = await fetch(endpoint, {
 					cache: "no-store",
-					credentials: "omit",
+					credentials: "same-origin",
 					redirect: "error",
 				});
 				if (!response.ok) {

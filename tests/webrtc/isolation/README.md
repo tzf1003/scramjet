@@ -1,65 +1,44 @@
-# Enforced isolation scripts
+# Supervised WebRTC isolation
 
-These scripts install a default-deny egress policy for a WebRTC client. They are
-Linux-only (nftables). `run-in-netns.sh` requires root and creates the veth pair
-and namespace; `setup-nftables.sh` can also be run inside a container namespace.
+`run-in-netns.sh` runs the host-side test process and launches only Chromium in a
+fresh dual-stack Linux network namespace. It needs root, Python 3, nftables,
+iproute2 and tcpdump. See `docs/webrtc-deployment.md` for the complete command.
 
-## Quick container check (works on macOS Docker)
+The policy permits only explicitly configured proxy, credential/signaling, TURN
+and optional DNS endpoints. There is no broad established-connection exception.
+Rule updates are atomic. Invalid replacement rules keep the prior boundary.
+
+The launcher verifies IPv4/IPv6 TCP and UDP, unauthorized DNS, a real native-browser
+connection that fails with isolation enabled, and the same direct connection that
+succeeds when the test temporarily removes isolation. It restores and reverifies
+the policy before starting the application suite. A namespace/ruleset digest
+identifies each receipt; the supervisor stops Chromium when the digest changes.
+
+Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to the installed browser, `TURN_HOST` to the
+reachable IPv4 relay, and optionally `TURN_HOST_V6` to its IPv6 listener. The test
+command receives `WEBRTC_TEST_MODE=enforced`, a browser wrapper executable and
+explicit service ports. Configure `SCRAMJET_EXTRA_TCP_PORTS` for additional trusted
+services; port ranges are rejected. `ALLOW_LOOPBACK` defaults to 0.
+
+`MASQUERADE=1` can be used in a disposable test container when Coturn is on another
+container subnet. Cleanup removes only the task-owned namespace/interface/NAT
+rules and restores prior forwarding state. Existing namespace/interface names are
+rejected, preserving other running tests.
+
+Fault-injection regression:
 
 ```sh
-docker compose -f tests/webrtc/isolation/docker-compose.yml up -d
-C=$(docker compose -f tests/webrtc/isolation/docker-compose.yml ps -q client)
-SERVER_IP=$(docker exec "$C" getent hosts server | awk '{print $1}')
-
-# Negative control: internet is reachable before the rules.
-docker exec "$C" bash -c "timeout 3 bash -c 'exec 3<>/dev/tcp/1.1.1.1/443' && echo reachable"
-
-docker exec "$C" env SCRAMJET_HOST="$SERVER_IP" SCRAMJET_PORT=8080 \
-  TURN_HOST="$SERVER_IP" TURN_PORT=80 \
-  sh /repo/tests/webrtc/isolation/setup-nftables.sh
-
-docker exec "$C" env TURN_HOST="$SERVER_IP" TURN_PORT=80 \
-  UNAUTHORIZED_UDP_TARGET=1.1.1.1:19302 EVIDENCE_DIR=/repo/tests/webrtc/artifacts \
-  sh /repo/tests/webrtc/isolation/verify-isolation.sh
+docker run --rm --network none --cap-add NET_ADMIN \
+  -v "$PWD/tests/webrtc/isolation:/isolation:ro" \
+  nicolaka/netshoot python3 /isolation/regression.py
 ```
 
-Expected: verifier prints `ok:true` with `deniedAfter > deniedBefore`; the same
-internet probe now times out.
+Artifacts: `policy.json`, `isolation.json`, `browser-direct-control.json`,
+`client.pcap` and Runway JSON. All use the same run ID. After the run, inspect the
+client capture with `tests/webrtc/capture/check-client-egress.py`; it correlates
+policy and receipt identity, requires observed TURN packets and fails on
+unauthorized IPv4/IPv6 TCP/UDP destination packets.
 
-## Linux namespace
-
-```sh
-sudo env SCRAMJET_HOST=10.200.0.1 SCRAMJET_PORT=4500 \
-  TURN_HOST=10.200.0.1 TURN_PORT=13478 \
-  UNAUTHORIZED_UDP_TARGET=1.1.1.1:19302 \
-  tests/webrtc/isolation/run-in-netns.sh -- <browser command>
-```
-
-The namespace uses `10.200.0.2` (client) and `10.200.0.1` (host). Configure
-coturn with `TURN_EXTERNAL_IP=10.200.0.1/<container-ip>` and include the client
-peer only in `TURN_ALLOWED_PEER_IP` for tests.
-
-## Test-only allowances
-
-The Runway browser test needs a direct TCP path for its ephemeral signaling
-server and for the browser to reach the harness. Production rules should not
-allow arbitrary target ports. In the namespace, the Scramjet origin/Wisp ports
-and TURN ports are the only production flows; add test-only ports explicitly for
-the test harness, or run the signaling server through an allowed origin.
-
-`ALLOW_LOOPBACK=1` is the default for local tests. Set it to `0` in production;
-otherwise a local target peer can bypass the relay over loopback.
-
-`TARGET_TCP_RANGE` is a test-only allowance for Runway's ephemeral target /
-signaling ports (e.g. `10000-65535`). Do not set it in production; production
-flows are Scramjet/Wisp and TURN only.
-
-## Chromium policies
-
-- `chromium-policy-defense-in-depth.json` (`default_public_interface_only`) hides
-  private host candidates but is not a boundary.
-- `chromium-policy-proxy-only.json` (`disable_non_proxied_udp`) blocks all
-  non-proxied UDP and breaks TURN/UDP; it is not compatible with relay mode.
-
-nftables is the authoritative control. Do not claim enforced isolation from a
-browser policy file alone.
+Chromium policy JSON files provide additional browser policy guidance. The
+`disable_non_proxied_udp` policy blocks TURN/UDP, so the compatible isolation
+boundary is the supervised network namespace and nftables policy.

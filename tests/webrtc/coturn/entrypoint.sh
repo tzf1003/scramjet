@@ -15,6 +15,14 @@ if [ -n "${TURN_EXTERNAL_IP:-}" ]; then
 	set -- "$@" "--external-ip=$TURN_EXTERNAL_IP"
 fi
 
+# Disposable test stacks can use a dynamically assigned container relay address.
+# Production does not enable this test-only allowance.
+if [ "${TURN_TEST_ALLOW_SELF:-0}" = 1 ]; then
+	for peer in $(hostname -i); do
+		set -- "$@" "--allowed-peer-ip=$peer"
+	done
+fi
+
 if [ -n "${TURN_ALLOWED_PEER_IP:-}" ]; then
 	old_ifs=$IFS
 	IFS=,

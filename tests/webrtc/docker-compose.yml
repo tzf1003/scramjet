@@ -2,7 +2,7 @@ name: scramjet-webrtc
 
 services:
   coturn:
-    image: coturn/coturn:4.6.3-alpine
+    image: coturn/coturn:4.18.0-r0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3
     entrypoint: ["/bin/sh", "/opt/coturn/entrypoint.sh"]
     environment:
       TURN_STATIC_AUTH_SECRET: ${TURN_STATIC_AUTH_SECRET:?set TURN_STATIC_AUTH_SECRET in tests/webrtc/.env}
@@ -38,6 +38,9 @@ services:
       TURN_TTL: ${TURN_TTL:-3600}
       PORT: "18081"
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-}
+      ALLOW_ANONYMOUS_TEST_ONLY: ${ALLOW_ANONYMOUS_TEST_ONLY:-0}
+      CREDENTIAL_SESSION_SECRET: ${CREDENTIAL_SESSION_SECRET:-}
+      CREDENTIAL_RATE_LIMIT: ${CREDENTIAL_RATE_LIMIT:-30}
     volumes:
       - ./server:/app:ro
     ports:
@@ -51,7 +54,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:18081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 2s
       timeout: 2s

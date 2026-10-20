@@ -17,18 +17,24 @@ if [ ! -f .env ]; then
 	if [ -n "$host_ip" ]; then
 		peer_ips="$peer_ips,$host_ip"
 	fi
+	advertise_ip=${host_ip:-127.0.0.1}
 	cat >.env <<EOF
 TURN_STATIC_AUTH_SECRET=$secret
 TURN_REALM=scramjet.webrtc
-TURN_EXTERNAL_IP=127.0.0.1/172.29.0.10
+TURN_EXTERNAL_IP=$advertise_ip/172.29.0.10
 TURN_ALLOWED_PEER_IP=$peer_ips
-TURN_URLS=turn:127.0.0.1:13478?transport=udp,turn:127.0.0.1:13478?transport=tcp,turns:127.0.0.1:15349?transport=tcp
-TURN_TTL=3600
+TURN_URLS=turn:$advertise_ip:13478?transport=udp,turn:$advertise_ip:13478?transport=tcp,turns:$advertise_ip:15349?transport=tcp
+TURN_TTL=120
 ALLOWED_ORIGIN=*
+ALLOW_ANONYMOUS_TEST_ONLY=1
+CREDENTIAL_RATE_LIMIT=1000
 EOF
 	echo "created tests/webrtc/.env with a random TURN secret"
 fi
 
+# This launcher is explicitly the local/CI test environment. Production uses
+# Compose directly with authenticated sessions and the default issuance limit.
+export ALLOW_ANONYMOUS_TEST_ONLY=1 CREDENTIAL_RATE_LIMIT=1000
 sh coturn/generate-certs.sh
 docker compose --env-file .env up -d
 

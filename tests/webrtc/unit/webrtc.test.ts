@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	evaluateSelectedCandidatePair,
+	evaluateSelectedCandidatePairs,
+	cloneIceServers,
 	hasNonRelayCandidates,
 	normalizeWebrtcConfig,
 	parseWebrtcCredentialPayload,
@@ -96,7 +98,12 @@ test("sanitize: replaces page ICE config and preserves non-network fields", () =
 	const result = sanitizeRtcConfiguration(input, servers);
 
 	assert.equal(result.iceTransportPolicy, "relay");
-	assert.deepEqual(result.iceServers, servers);
+	assert.deepEqual(
+		Array.from(result.iceServers!, (server) => ({ ...server })),
+		servers
+	);
+	assert.equal(Object.getPrototypeOf(result), null);
+	assert.equal(Object.getPrototypeOf(result.iceServers![0]), null);
 	assert.equal(result.bundlePolicy, "max-bundle");
 	assert.equal(result.rtcpMuxPolicy, "require");
 	assert.equal(result.iceCandidatePoolSize, 2);
@@ -146,9 +153,10 @@ test("credentials: parses coturn REST payload", () => {
 		},
 		now
 	);
-	assert.deepEqual(parsed.iceServers, [
-		{ urls: [TURN_A], username: "1700003600:test", credential: "abc" },
-	]);
+	assert.deepEqual(
+		Array.from(parsed.iceServers, (server) => ({ ...server })),
+		[{ urls: [TURN_A], username: "1700003600:test", credential: "abc" }]
+	);
 	assert.equal(parsed.ttlMs, 3_600_000);
 	assert.equal(parsed.expiresAt, now + 3_600_000);
 
@@ -161,6 +169,149 @@ test("credentials: parses coturn REST payload", () => {
 	);
 	assert.equal(fromList.iceServers.length, 1);
 	assert.equal(fromList.expiresAt, now + 60_000);
+});
+
+test("policy cloning is independent of page-owned array, string and regexp methods", () => {
+	const servers = [{ urls: [TURN_A, TURN_B], username: "u", credential: "c" }];
+	const originals = {
+		map: Array.prototype.map,
+		some: Array.prototype.some,
+		slice: Array.prototype.slice,
+		iterator: Array.prototype[Symbol.iterator],
+		exec: RegExp.prototype.exec,
+		trim: String.prototype.trim,
+		lower: String.prototype.toLowerCase,
+	};
+	let cloned: ReturnType<typeof cloneIceServers>;
+	let sanitized: RTCConfiguration;
+	let nonRelay: boolean;
+	try {
+		Array.prototype.map = (() => [{ urls: "turn:attacker.invalid" }]) as never;
+		Array.prototype.some = (() => false) as never;
+		Array.prototype.slice = (() => []) as never;
+		Array.prototype[Symbol.iterator] = function* () {
+			yield { urls: "turn:attacker.invalid" };
+		} as never;
+		RegExp.prototype.exec = (() => null) as never;
+		String.prototype.trim = (() => "turn:attacker.invalid") as never;
+		String.prototype.toLowerCase = (() => "relay") as never;
+		cloned = cloneIceServers(servers);
+		sanitized = sanitizeRtcConfiguration({}, servers);
+		nonRelay = hasNonRelayCandidates(
+			"a=candidate:1 1 udp 1 192.0.2.1 1234 typ host"
+		);
+	} finally {
+		Array.prototype.map = originals.map;
+		Array.prototype.some = originals.some;
+		Array.prototype.slice = originals.slice;
+		Array.prototype[Symbol.iterator] = originals.iterator;
+		RegExp.prototype.exec = originals.exec;
+		String.prototype.trim = originals.trim;
+		String.prototype.toLowerCase = originals.lower;
+	}
+	assert.equal(cloned![0].urls[0], TURN_A);
+	assert.deepEqual(Array.from(sanitized!.iceServers![0].urls), [
+		TURN_A,
+		TURN_B,
+	]);
+	assert.equal(nonRelay!, true);
+	assert.deepEqual(
+		Array.from(cloned![Symbol.iterator]()).map((server) => server.username),
+		["u"]
+	);
+});
+
+test("dictionary sanitization accepts function objects, inherited fields and null defaults", () => {
+	const fn = Object.assign(() => {}, {
+		iceTransportPolicy: "all",
+		iceServers: [{ urls: "turn:attacker.invalid" }],
+	});
+	Object.setPrototypeOf(fn, { bundlePolicy: "max-bundle" });
+	const configured = sanitizeRtcConfiguration(fn, [{ urls: TURN_A }]);
+	assert.equal(configured.iceTransportPolicy, "relay");
+	assert.equal(configured.iceServers![0].urls, TURN_A);
+	assert.equal(configured.bundlePolicy, "max-bundle");
+	for (const input of [null, undefined]) {
+		assert.equal(
+			sanitizeRtcConfiguration(input, [{ urls: TURN_A }]).iceTransportPolicy,
+			"relay"
+		);
+	}
+	assert.throws(
+		() =>
+			normalizeWebrtcConfig({
+				mode: "enforced",
+				networkIsolationVerified: "true" as never,
+			}),
+		/must be a boolean/
+	);
+});
+
+test("stats checks every transport and retains broken references", () => {
+	const report = statsReport([
+		{ id: "T1", type: "transport", selectedCandidatePairId: "P1" },
+		{ id: "T2", type: "transport", selectedCandidatePairId: "P2" },
+		{ id: "P1", type: "candidate-pair", localCandidateId: "L1" },
+		{ id: "P2", type: "candidate-pair", localCandidateId: "L2" },
+		{ id: "L1", type: "local-candidate", candidateType: "relay" },
+		{ id: "L2", type: "local-candidate", candidateType: "host" },
+	]);
+	assert.deepEqual(
+		evaluateSelectedCandidatePairs(report).map((pair) => pair.localType),
+		["relay", "host"]
+	);
+	const missing = evaluateSelectedCandidatePairs(
+		statsReport([
+			{ id: "T", type: "transport", selectedCandidatePairId: "missing" },
+		])
+	);
+	assert.equal(missing.length, 1);
+	assert.equal(missing[0].localType, null);
+	const unreported = evaluateSelectedCandidatePairs(
+		statsReport([
+			{
+				id: "T1",
+				type: "transport",
+				dtlsState: "connected",
+				selectedCandidatePairId: "P1",
+			},
+			{ id: "T2", type: "transport", dtlsState: "connected" },
+			{
+				id: "P1",
+				type: "candidate-pair",
+				transportId: "T1",
+				localCandidateId: "L1",
+			},
+			{
+				id: "stale",
+				type: "candidate-pair",
+				transportId: "T1",
+				state: "succeeded",
+				nominated: true,
+				localCandidateId: "L1",
+			},
+			{ id: "L1", type: "local-candidate", candidateType: "relay" },
+		])
+	);
+	assert.deepEqual(
+		unreported.map((pair) => pair.localType),
+		["relay", null]
+	);
+	const compatible = evaluateSelectedCandidatePairs(
+		statsReport([
+			{ id: "T1", type: "transport", dtlsState: "connected" },
+			{
+				id: "P1",
+				type: "candidate-pair",
+				transportId: "T1",
+				state: "succeeded",
+				nominated: true,
+				localCandidateId: "L1",
+			},
+			{ id: "L1", type: "local-candidate", candidateType: "relay" },
+		])
+	);
+	assert.equal(compatible[0].localType, "relay");
 });
 
 test("credentials: rejects missing ttl, missing auth and non-TURN URLs", () => {

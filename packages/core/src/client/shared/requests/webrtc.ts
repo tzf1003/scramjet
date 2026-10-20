@@ -1,7 +1,8 @@
 import { ScramjetClient, type Proxy, type ProxyCtx } from "@client/index";
 import {
 	defaultWebrtcConfig,
-	evaluateSelectedCandidatePair,
+	evaluateSelectedCandidatePairs,
+	isTurnUrl,
 	hasNonRelayCandidates,
 	normalizeWebrtcConfig,
 	parseWebrtcCredentialPayload,
@@ -11,16 +12,17 @@ import {
 } from "@/shared/webrtc";
 import {
 	_URL,
-	Array_isArray,
 	Date_now,
 	Error,
 	JSON_stringify,
 	Math_max,
 	Math_min,
-	Object_assign,
+	Object_getOwnPropertyDescriptor,
+	Reflect_apply,
+	Promise_race,
+	Reflect_set,
 	Object_getPrototypeOf,
 	Promise_resolve,
-	String,
 } from "@/shared/snapshot";
 
 // eslint-disable-next-line scramjet-core/no-globals -- type-only reference
@@ -32,12 +34,16 @@ type NativeMethods = {
 	getConfiguration: RTCPeerConnection["getConfiguration"];
 	getStats: RTCPeerConnection["getStats"];
 	close: RTCPeerConnection["close"];
+	connectionState: (this: RTCPeerConnection) => RTCPeerConnectionState;
+	iceConnectionState: (this: RTCPeerConnection) => RTCIceConnectionState;
+	localDescription: (this: RTCPeerConnection) => RTCSessionDescription | null;
 };
 
 type CredentialState = {
 	iceServers: WebrtcIceServer[];
 	expiresAt: number | null;
 	refreshTimer: TimerHandle | null;
+	expiryTimer: TimerHandle | null;
 	refreshInFlight: Promise<void> | null;
 	retryMs: number;
 };
@@ -45,6 +51,7 @@ type CredentialState = {
 type PcState = {
 	closed: boolean;
 	pairCheckToken: number;
+	pairTimer: TimerHandle | null;
 	methods: NativeMethods;
 };
 
@@ -59,6 +66,18 @@ function captureMethods(ctor: NativeRtcConstructor): NativeMethods {
 		getConfiguration: ctor.prototype.getConfiguration,
 		getStats: ctor.prototype.getStats,
 		close: ctor.prototype.close,
+		connectionState: Object_getOwnPropertyDescriptor(
+			ctor.prototype,
+			"connectionState"
+		)!.get as NativeMethods["connectionState"],
+		iceConnectionState: Object_getOwnPropertyDescriptor(
+			ctor.prototype,
+			"iceConnectionState"
+		)!.get as NativeMethods["iceConnectionState"],
+		localDescription: Object_getOwnPropertyDescriptor(
+			ctor.prototype,
+			"localDescription"
+		)!.get as NativeMethods["localDescription"],
 	};
 }
 
@@ -105,26 +124,65 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	const nativeSetTimeout = self.setTimeout.bind(self);
 	const nativeClearTimeout = self.clearTimeout.bind(self);
 
+	const weakMapGet = NativeWeakMap.prototype.get;
+	const weakMapSet = NativeWeakMap.prototype.set;
+	const weakMapHas = NativeWeakMap.prototype.has;
+	const weakSetHas = NativeWeakSet.prototype.has;
+	const weakSetAdd = NativeWeakSet.prototype.add;
+	const setAdd = NativeSet.prototype.add;
+	const setDelete = NativeSet.prototype.delete;
+	const setForEach = NativeSet.prototype.forEach;
+	const promiseThen = self.Promise.prototype.then;
+	const NativePromise = self.Promise;
+	const eventAdd = self.EventTarget.prototype.addEventListener;
+	const responseJson = self.Response.prototype.json;
+	const responseOk = Object_getOwnPropertyDescriptor(
+		self.Response.prototype,
+		"ok"
+	)!.get!;
+	const responseStatus = Object_getOwnPropertyDescriptor(
+		self.Response.prototype,
+		"status"
+	)!.get!;
+	const nativeFetch = client.natives.store.fetch as typeof self.fetch;
+	const reportForEach = self.RTCStatsReport?.prototype.forEach;
 	const methodsByPrototype = new NativeWeakMap<object, NativeMethods>();
-	for (const ctor of [nativeRtc, nativeWebkit]) {
-		if (ctor && !methodsByPrototype.has(ctor.prototype)) {
-			methodsByPrototype.set(ctor.prototype, captureMethods(ctor));
+	const constructors = [nativeRtc, nativeWebkit];
+	for (let index = 0; index < constructors.length; index++) {
+		const ctor = constructors[index];
+		if (
+			ctor &&
+			!Reflect_apply(weakMapHas, methodsByPrototype, [ctor.prototype])
+		) {
+			Reflect_apply(weakMapSet, methodsByPrototype, [
+				ctor.prototype,
+				captureMethods(ctor),
+			]);
 		}
 	}
-	const fallbackMethods = methodsByPrototype.get(
-		(nativeRtc ?? nativeWebkit)!.prototype
-	)!;
+	const fallbackMethods = Reflect_apply(weakMapGet, methodsByPrototype, [
+		(nativeRtc ?? nativeWebkit)!.prototype,
+	]) as NativeMethods;
 	const states = new NativeWeakMap<RTCPeerConnection, PcState>();
 	const active = new NativeSet<RTCPeerConnection>();
+	const stateFor = (pc: RTCPeerConnection): PcState | undefined =>
+		Reflect_apply(weakMapGet, states, [pc]);
 	const methodsFor = (pc: RTCPeerConnection): NativeMethods =>
-		states.get(pc)?.methods ??
-		methodsByPrototype.get(Object_getPrototypeOf(pc)) ??
+		stateFor(pc)?.methods ??
+		Reflect_apply(weakMapGet, methodsByPrototype, [
+			Object_getPrototypeOf(pc),
+		]) ??
 		fallbackMethods;
+	const removeActive = (pc: RTCPeerConnection) =>
+		Reflect_apply(setDelete, active, [pc]);
+	const forEachActive = (callback: (pc: RTCPeerConnection) => void) =>
+		Reflect_apply(setForEach, active, [callback]);
 
 	const credential: CredentialState = {
 		iceServers: config.iceServers,
 		expiresAt: config.iceServersExpiresAt,
 		refreshTimer: null,
+		expiryTimer: null,
 		refreshInFlight: null,
 		retryMs: RETRY_INITIAL_MS,
 	};
@@ -151,104 +209,141 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		(credential.expiresAt === null ||
 			credential.expiresAt > Date_now() + 1_000);
 
-	const iceServerUrls = (servers: readonly WebrtcIceServer[]) => {
-		const urls = new NativeSet<string>();
-		for (const server of servers) {
-			for (const url of Array_isArray(server.urls)
-				? server.urls
-				: [server.urls]) {
-				urls.add(url);
+	const urlAuthorized = (url: string) => {
+		for (let index = 0; index < credential.iceServers.length; index++) {
+			const configured = credential.iceServers[index].urls;
+			if (typeof configured === "string") {
+				if (url === configured) return true;
+			} else {
+				for (let item = 0; item < configured.length; item++)
+					if (url === configured[item]) return true;
 			}
 		}
-		return urls;
+		return false;
 	};
 
 	const assertNativeConfiguration = (pc: RTCPeerConnection) => {
-		const actual = methodsFor(pc).getConfiguration.call(pc);
-		if (actual.iceTransportPolicy !== "relay") {
-			throw securityError(
-				`browser ignored iceTransportPolicy=relay (got ${String(
-					actual.iceTransportPolicy
-				)})`
-			);
-		}
-		const expected = iceServerUrls(credential.iceServers);
-		const actualUrls = iceServerUrls(
-			(actual.iceServers ?? []) as WebrtcIceServer[]
-		);
-		if (actualUrls.size === 0) {
+		const actual = Reflect_apply(
+			methodsFor(pc).getConfiguration,
+			pc,
+			[]
+		) as RTCConfiguration;
+		if (actual.iceTransportPolicy !== "relay")
+			throw securityError("browser ignored iceTransportPolicy=relay");
+		const servers = actual.iceServers ?? [];
+		if (servers.length === 0)
 			throw configurationError("no TURN servers are active");
-		}
-		for (const url of actualUrls) {
-			if (!expected.has(url)) {
-				throw securityError(`unauthorised ICE server survived: ${url}`);
+		for (let index = 0; index < servers.length; index++) {
+			const urls = servers[index].urls;
+			if (typeof urls === "string") {
+				if (!urlAuthorized(urls))
+					throw securityError("unauthorised ICE server survived");
+			} else {
+				if (!urls || urls.length === 0)
+					throw securityError("empty ICE server URL list");
+				for (let item = 0; item < urls.length; item++) {
+					if (!urlAuthorized(urls[item]))
+						throw securityError("unauthorised ICE server survived");
+				}
 			}
 		}
 	};
 
 	const closeUnsafe = (pc: RTCPeerConnection, reason: string) => {
-		const state = states.get(pc);
+		const state = stateFor(pc);
 		if (state?.closed) return;
-		if (state) state.closed = true;
-		active.delete(pc);
+		if (state) {
+			state.closed = true;
+			nativeClearTimeout(state.pairTimer);
+		}
+		removeActive(pc);
 		dbg.error(`[scramjet:webrtc] closing connection: ${reason}`);
 		try {
-			methodsFor(pc).close.call(pc);
+			Reflect_apply(methodsFor(pc).close, pc, []);
 		} catch {
 			// The connection may already be closed by the page.
 		}
 	};
 
 	const verifySelectedPair = (pc: RTCPeerConnection) => {
-		const state = states.get(pc);
+		const state = stateFor(pc);
 		if (!state || state.closed) return;
+		nativeClearTimeout(state.pairTimer);
 		const token = ++state.pairCheckToken;
 		let attempts = 0;
-
 		const check = async () => {
 			if (state.closed || token !== state.pairCheckToken) return;
-			let report: RTCStatsReport;
+			if (
+				!credentialsUsable() &&
+				(config.failClosed || config.mode === "enforced")
+			) {
+				closeUnsafe(pc, "TURN credentials expired");
+				return;
+			}
+			let timeout: TimerHandle | null = null;
 			try {
-				report = await methodsFor(pc).getStats.call(pc);
-			} catch (error) {
-				log("getStats failed during pair verification", error);
-				return;
-			}
-			if (state.closed || token !== state.pairCheckToken) return;
-			const pair = evaluateSelectedCandidatePair(report);
-			if (!pair) {
-				if (++attempts < PAIR_CHECK_ATTEMPTS) {
-					nativeSetTimeout(check, PAIR_CHECK_INTERVAL_MS);
-				} else {
-					dbg.warn(
-						"[scramjet:webrtc] could not observe a selected candidate pair"
+				if (!reportForEach)
+					throw configurationError(
+						"browser does not expose verifiable WebRTC statistics"
 					);
+				const report = (await Promise_race([
+					Reflect_apply(methodsFor(pc).getStats, pc, []),
+					new NativePromise<never>((_resolve, reject) => {
+						timeout = nativeSetTimeout(
+							() => reject(securityError("WebRTC statistics timed out")),
+							1500
+						);
+					}),
+				])) as RTCStatsReport;
+				if (state.closed || token !== state.pairCheckToken) return;
+				const pairs = evaluateSelectedCandidatePairs({
+					forEach(callback) {
+						Reflect_apply(reportForEach, report, [callback]);
+					},
+				});
+				if (pairs.length === 0)
+					throw securityError("could not observe a selected candidate pair");
+				for (let index = 0; index < pairs.length; index++) {
+					const pair = pairs[index];
+					const turnBacked =
+						pair.localType === "relay" ||
+						(pair.localType === "prflx" &&
+							typeof pair.localUrl === "string" &&
+							isTurnUrl(pair.localUrl) &&
+							urlAuthorized(pair.localUrl) &&
+							pair.localRelayProtocol !== null);
+					if (
+						!turnBacked ||
+						(pair.localUrl !== null && !urlAuthorized(pair.localUrl))
+					) {
+						closeUnsafe(
+							pc,
+							"selected candidate pair is not backed by an authorised TURN server"
+						);
+						return;
+					}
 				}
-				return;
+				attempts = 0;
+				log(`selected pairs verified ${JSON_stringify(pairs)}`);
+			} catch (error) {
+				log("selected pair verification pending", error);
+				if (
+					++attempts >= PAIR_CHECK_ATTEMPTS &&
+					(config.failClosed || config.mode === "enforced")
+				) {
+					closeUnsafe(pc, "selected candidate pairs could not be verified");
+					return;
+				}
+			} finally {
+				nativeClearTimeout(timeout);
 			}
-			// TURN can surface the selected local candidate as prflx when the peer
-			// discovers the relayed transport. `url`/`relayProtocol` prove the
-			// candidate is backed by a TURN allocation; a direct prflx has no TURN
-			// URL. Accept only relay candidates and TURN-backed prflx candidates.
-			const turnBacked =
-				pair.localType === "relay" ||
-				(pair.localType === "prflx" &&
-					typeof pair.localUrl === "string" &&
-					/^turns?:/i.test(pair.localUrl) &&
-					pair.localRelayProtocol !== null);
-			if (!turnBacked) {
-				log(`selected pair rejected ${JSON_stringify(pair)}`);
-				closeUnsafe(
-					pc,
-					`selected local candidate is ${String(
-						pair.localType
-					)} via ${String(pair.localUrl)}, expected a TURN-backed candidate`
+			if (!state.closed && token === state.pairCheckToken) {
+				state.pairTimer = nativeSetTimeout(
+					check,
+					attempts ? PAIR_CHECK_INTERVAL_MS : 1000
 				);
-				return;
 			}
-			log(`selected pair verified ${JSON_stringify(pair)}`);
 		};
-
 		void check();
 	};
 
@@ -256,42 +351,55 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		const state: PcState = {
 			closed: false,
 			pairCheckToken: 0,
+			pairTimer: null,
 			methods,
 		};
-		states.set(pc, state);
-		active.add(pc);
+		Reflect_apply(weakMapSet, states, [pc, state]);
+		Reflect_apply(setAdd, active, [pc]);
 
-		pc.addEventListener("icecandidate", (event) => {
-			const line = event.candidate?.candidate;
-			if (line && hasNonRelayCandidates(`a=${line}`)) {
-				closeUnsafe(pc, "non-relay ICE candidate emitted");
-			}
-		});
+		Reflect_apply(eventAdd, pc, [
+			"icecandidate",
+			(event: RTCPeerConnectionIceEvent) => {
+				const line = event.candidate?.candidate;
+				if (line && hasNonRelayCandidates(`a=${line}`)) {
+					closeUnsafe(pc, "non-relay ICE candidate emitted");
+				}
+			},
+		]);
 
-		pc.addEventListener("iceconnectionstatechange", () => {
-			if (
-				pc.iceConnectionState === "connected" ||
-				pc.iceConnectionState === "completed"
-			) {
-				verifySelectedPair(pc);
-			} else if (
-				pc.iceConnectionState === "failed" &&
-				config.credentialEndpoint
-			) {
-				void refreshCredentials().catch((error) =>
-					log("credential refresh after ICE failure failed", error)
-				);
-			}
-		});
+		Reflect_apply(eventAdd, pc, [
+			"iceconnectionstatechange",
+			() => {
+				if (
+					Reflect_apply(methods.iceConnectionState, pc, []) === "connected" ||
+					Reflect_apply(methods.iceConnectionState, pc, []) === "completed"
+				) {
+					verifySelectedPair(pc);
+				} else if (
+					Reflect_apply(methods.iceConnectionState, pc, []) === "failed" &&
+					config.credentialEndpoint
+				) {
+					void refreshCredentials().catch((error) =>
+						log("credential refresh after ICE failure failed", error)
+					);
+				}
+			},
+		]);
 
-		pc.addEventListener("connectionstatechange", () => {
-			if (pc.connectionState === "connected") {
-				verifySelectedPair(pc);
-			} else if (pc.connectionState === "closed") {
-				state.closed = true;
-				active.delete(pc);
-			}
-		});
+		Reflect_apply(eventAdd, pc, [
+			"connectionstatechange",
+			() => {
+				if (Reflect_apply(methods.connectionState, pc, []) === "connected") {
+					verifySelectedPair(pc);
+				} else if (
+					Reflect_apply(methods.connectionState, pc, []) === "closed"
+				) {
+					state.closed = true;
+					removeActive(pc);
+					nativeClearTimeout(state.pairTimer);
+				}
+			},
+		]);
 	};
 
 	function refreshCredentials(): Promise<void> {
@@ -302,21 +410,21 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			.href;
 		credential.refreshInFlight = (async () => {
 			try {
-				const response: Response = await client.natives.call(
-					"fetch",
-					self,
+				const response = (await Reflect_apply(nativeFetch, self, [
 					url,
 					{
 						cache: "no-store",
-						credentials: "omit",
+						credentials: "same-origin",
 						redirect: "error",
-					}
-				);
-				if (!response.ok) {
-					throw new Error(`credential endpoint returned ${response.status}`);
+					},
+				])) as Response;
+				if (!Reflect_apply(responseOk, response, [])) {
+					throw new Error(
+						`credential endpoint returned ${Reflect_apply(responseStatus, response, [])}`
+					);
 				}
 				const parsed = parseWebrtcCredentialPayload(
-					await response.json(),
+					await Reflect_apply(responseJson, response, []),
 					Date_now()
 				);
 				credential.iceServers = parsed.iceServers;
@@ -348,6 +456,22 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	function scheduleCredentialRefresh() {
 		nativeClearTimeout(credential.refreshTimer);
 		credential.refreshTimer = null;
+		nativeClearTimeout(credential.expiryTimer);
+		if (credential.expiresAt !== null) {
+			credential.expiryTimer = nativeSetTimeout(
+				() => {
+					if (
+						!credentialsUsable() &&
+						(config.failClosed || config.mode === "enforced")
+					) {
+						forEachActive((pc) =>
+							closeUnsafe(pc, "TURN credentials expired before refresh")
+						);
+					}
+				},
+				Math_min(Math_max(0, credential.expiresAt - Date_now()), 2_147_483_647)
+			);
+		}
 		if (!config.credentialEndpoint) return;
 		const now = Date_now();
 		const delay =
@@ -368,26 +492,27 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	}
 
 	function applyCredentialsToActiveConnections() {
-		for (const pc of active) {
-			const state = states.get(pc);
+		forEachActive((pc) => {
+			const state = stateFor(pc);
 			if (!state || state.closed) {
-				active.delete(pc);
-				continue;
+				removeActive(pc);
+				return;
 			}
 			try {
-				const current = state.methods.getConfiguration.call(pc);
-				state.methods.setConfiguration.call(
-					pc,
-					sanitizeRtcConfiguration(current, credential.iceServers)
-				);
+				const current = Reflect_apply(state.methods.getConfiguration, pc, []);
+				Reflect_apply(state.methods.setConfiguration, pc, [
+					sanitizeRtcConfiguration(current, credential.iceServers),
+				]);
 				assertNativeConfiguration(pc);
 			} catch (error) {
 				log(
 					"could not apply refreshed credentials to a live connection",
 					error
 				);
+				if (config.failClosed || config.mode === "enforced")
+					closeUnsafe(pc, "refreshed TURN configuration could not be applied");
 			}
-		}
+		});
 	}
 
 	function ensureConstructible() {
@@ -425,10 +550,17 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				credential.iceServers
 			);
 			const methods =
-				methodsByPrototype.get((ctx.fn as NativeRtcConstructor).prototype) ??
-				fallbackMethods;
+				Reflect_apply(weakMapGet, methodsByPrototype, [
+					(ctx.fn as NativeRtcConstructor).prototype,
+				]) ?? fallbackMethods;
 			const pc = ctx.call() as RTCPeerConnection;
 			register(pc, methods);
+			try {
+				assertNativeConfiguration(pc);
+			} catch (error) {
+				closeUnsafe(pc, "initial TURN configuration failed verification");
+				throw error;
+			}
 			log("PeerConnection created", {
 				iceServers: credential.iceServers.length,
 				failClosed: config.failClosed,
@@ -442,22 +574,20 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		name: string,
 		ctor: NativeRtcConstructor | undefined
 	) => {
-		if (!ctor || hookedPrototypes.has(ctor.prototype)) return;
-		hookedPrototypes.add(ctor.prototype);
+		if (!ctor || Reflect_apply(weakSetHas, hookedPrototypes, [ctor.prototype]))
+			return;
+		Reflect_apply(weakSetAdd, hookedPrototypes, [ctor.prototype]);
 		const prefix = `${name}.prototype`;
 
 		client.Proxy(`${prefix}.setConfiguration`, {
 			apply(ctx) {
 				ensureConstructible();
 				const pc = ctx.this as RTCPeerConnection;
-				const input = ctx.args[0];
-				if (input !== null && typeof input === "object") {
-					const current = methodsFor(pc).getConfiguration.call(pc);
-					ctx.args[0] = sanitizeRtcConfiguration(
-						Object_assign({}, current, input),
-						credential.iceServers
-					);
-				}
+				ctx.args[0] = sanitizeRtcConfiguration(
+					ctx.args[0],
+					credential.iceServers,
+					Reflect_apply(methodsFor(pc).getConfiguration, pc, [])
+				);
 				ctx.call();
 				try {
 					assertNativeConfiguration(pc);
@@ -472,29 +602,36 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			apply(ctx) {
 				const pc = ctx.this as RTCPeerConnection;
 				const result = ctx.call() as Promise<unknown> | undefined;
-				if (!result || typeof result.then !== "function") return;
+				if (!result) return;
 				ctx.return(
-					result.then((value: unknown) => {
-						const sdp = pc.localDescription?.sdp;
-						if (sdp && hasNonRelayCandidates(sdp)) {
-							closeUnsafe(pc, "local SDP contained a non-relay ICE candidate");
-							throw securityError(
-								"local description contains a non-relay ICE candidate"
-							);
-						}
-						return value;
-					})
+					Reflect_apply(promiseThen, result, [
+						(value: unknown) => {
+							const sdp = (
+								Reflect_apply(
+									methodsFor(pc).localDescription,
+									pc,
+									[]
+								) as RTCSessionDescription | null
+							)?.sdp;
+							if (sdp && hasNonRelayCandidates(sdp)) {
+								closeUnsafe(
+									pc,
+									"local SDP contained a non-relay ICE candidate"
+								);
+								throw securityError(
+									"local description contains a non-relay ICE candidate"
+								);
+							}
+							return value;
+						},
+					])
 				);
 			},
 		});
 
 		client.Proxy(`${prefix}.restartIce`, {
 			apply(ctx) {
-				if (!credentialsUsable() && config.credentialEndpoint) {
-					void refreshCredentials().catch((error) =>
-						log("credential refresh before ICE restart failed", error)
-					);
-				}
+				ensureConstructible();
 				ctx.call();
 			},
 		});
@@ -502,17 +639,28 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		client.Proxy(`${prefix}.close`, {
 			apply(ctx) {
 				const pc = ctx.this as RTCPeerConnection;
-				const state = states.get(pc);
-				if (state) state.closed = true;
-				active.delete(pc);
+				const state = stateFor(pc);
+				if (state) {
+					state.closed = true;
+					nativeClearTimeout(state.pairTimer);
+				}
+				removeActive(pc);
 				ctx.call();
 			},
 		});
 	};
 
-	client.Proxy("RTCPeerConnection", constructorHandler);
-	if (nativeWebkit && nativeWebkit !== nativeRtc) {
-		client.Proxy("webkitRTCPeerConnection", constructorHandler);
+	if (nativeRtc) client.Proxy("RTCPeerConnection", constructorHandler);
+	if (nativeWebkit) {
+		if (nativeWebkit === nativeRtc) {
+			Reflect_set(
+				globals,
+				"webkitRTCPeerConnection",
+				globals.RTCPeerConnection
+			);
+		} else {
+			client.Proxy("webkitRTCPeerConnection", constructorHandler);
+		}
 	}
 	hookPrototype("RTCPeerConnection", nativeRtc);
 	hookPrototype("webkitRTCPeerConnection", nativeWebkit);
