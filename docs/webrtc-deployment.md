@@ -188,10 +188,13 @@ substitute for nftables.
 # Unit policy tests
 node --experimental-strip-types --test tests/webrtc/unit/webrtc.test.ts
 
-# Real TURN DataChannel/media tests through the Scramjet harness
+# Real TURN DataChannel/media/concurrency tests through the Scramjet harness
+# (the repository's Runway script needs Node 24)
 cd packages/runway
-TURN_CREDENTIALS_URL=http://127.0.0.1:18081/turn-credentials \
-  pnpm test webrtc-relay --parallel 1
+WEBRTC_FAKE_MEDIA=1 WEBRTC_EXPOSE_HOST_CANDIDATES=1 \
+  TURN_CREDENTIALS_URL=http://127.0.0.1:18081/turn-credentials \
+  npx -y node@24 --experimental-strip-types --no-warnings \
+  src/index.ts webrtc- --parallel 1
 ```
 
 Set `RUNWAY_BROWSER=firefox|webkit` to run the same suite in another Playwright

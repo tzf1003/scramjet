@@ -212,7 +212,7 @@ jobs:
             tests/webrtc/isolation/run-in-netns.sh -- \
             env TURN_CREDENTIALS_URL="$TURN_CREDENTIALS_URL" \
               PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/ms-playwright" \
-              pnpm --dir packages/runway test webrtc-relay --parallel 1
+              pnpm --dir packages/runway test webrtc-relay-datachannel --parallel 1
 
       - name: Collect isolation evidence
         if: always()
