@@ -157,7 +157,11 @@ await controller.wait();
 
 The controller resolves the credential endpoint during `ready`; every injected
 realm receives a JSON snapshot. The client hook also refreshes credentials before
-expiry and applies them to live connections. If the endpoint is unavailable, new
+expiry and applies them to live connections. When credentials or TURN URLs change
+on a connected peer, it calls native `restartIce()`. The application must handle
+`negotiationneeded` and exchange the resulting offer/answer; the Hook does not
+supply application signaling. If refreshed configuration cannot be applied, or
+credentials expire before refresh, fail-closed/enforced connections close. If the endpoint is unavailable, new
 PeerConnections throw `NotSupportedError` and never fall back to direct ICE.
 
 Environment-name mapping used by deployment tooling:
@@ -221,11 +225,19 @@ Configure explicit `DNS_HOST`/`DNS_HOST_V6` resolver addresses when hostname
 resolution is required; other DNS egress remains blocked. The JavaScript flag is
 a deployment attestation, not a browser API that can inspect kernel rules.
 
+The launcher retains its static IPv6 addresses during a link outage. The outer
+fault runner also restores the original addresses and default routes before
+rebuilding the signaling transport and native peers. In a multi-interface TURN
+deployment, set explicit Coturn `--relay-ip` addresses and matching external-IP
+mappings. The Linux test runner pins its IPv4/IPv6 relay bindings so a server
+restart cannot select the client's temporary veth as a new allocation interface.
+
 For an existing isolated deployment, `setup-nftables.sh` can install the same
 policy directly. Its transaction validates addresses, ports and identifiers and
-preserves the previous policy on failure. `verify-isolation.sh` creates temporary
-destination-specific counters immediately before the final deny rule, so traffic
-allowed by an earlier rule cannot borrow unrelated drops to pass verification.
+preserves the previous policy on failure. `verify-isolation.sh` validates the complete generated endpoint allowlist and
+uses temporary counter-only observations before the final deny. Extra rules,
+changed verdicts, duplicate markers or a different base-chain policy fail
+verification.
 Do not run that mutating verifier concurrently with the launcher's policy monitor.
 
 ### Chromium policy
@@ -267,3 +279,40 @@ browser. Playwright WebKit is not real iOS Safari; see the test report.
 | `unauthorised ICE server survived`             | a second WebRTC hook or browser policy is rewriting `getConfiguration`; remove the conflicting extension/policy |
 | `selected local candidate is host`             | browser ignored `iceTransportPolicy`; stop and use enforced mode with nftables                                  |
 | TURN/TLS fails in tests                        | self-signed certificate not trusted; use test launch flags or a real certificate                                |
+
+## 8. Acceptance runners and recovery
+
+The shared TURN fault suite runs with one test worker; its individual tests cover
+multiple simultaneous PeerConnections and DataChannels. The runner rejects a
+larger `--parallel` value because stopping that shared TURN would invalidate
+unrelated tests. `run-browser-suite.py` owns and removes only its test containers.
+
+```sh
+rtk env PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers python3 tests/webrtc/run-browser-suite.py --output /Volumes/1T/scramjet/verification/browser-matrix
+rtk docker build -f tests/webrtc/isolation/Dockerfile -t scramjet-webrtc-linux-verification:local .
+rtk python3 tests/webrtc/isolation/run-linux-suite.py --output /Volumes/1T/scramjet/verification/linux-ipv4
+rtk python3 tests/webrtc/isolation/run-linux-suite.py --ipv6 --output /Volumes/1T/scramjet/verification/linux-ipv6
+```
+
+`TURN_CLIENT_RELAY_RANGE=0` is the installer default: the client can reach only
+the authorized TURN listeners. `TURN_CLIENT_RELAY_RANGE=1` explicitly authorizes
+UDP to the **same TURN addresses** within `TURN_RELAY_MIN..TURN_RELAY_MAX`. The
+shared-Coturn integration/NAT topology uses this bounded allowance. Its value is
+included as `clientRelayRange` in `policy.json` and honored by the packet analyzer.
+The TURN-side firewall must allow its relay range in either case. Peer forwarding
+ACLs and authentication remain enforced by Coturn.
+
+After a TURN restart, applications rebuild a failed native PeerConnection and
+DataChannel and exchange fresh descriptions. After a network interface or tunnel
+failure, restore the network boundary first, then restore the application's
+signaling transport. The reference Harness initializes a fresh Libcurl transport
+and passes it to `Controller.setTransport()` before rebuilding peers. Existing
+failed SCTP channels are not reused as proof of recovery. The namespace runner
+restores the exact owned IPv4/IPv6 addresses and routes after its deliberate link
+fault; rules remain installed throughout.
+
+Each runner writes a source hash (including added files), Git revision, run ID,
+commands/results and artifact hashes. Linux runs include a normal client capture
+and a separate native direct-connect negative-control capture. The analyzer must
+accept the normal capture and detect unauthorized traffic in the control capture.
+See `webrtc-device-validation.md` for real-device and public-network procedures.

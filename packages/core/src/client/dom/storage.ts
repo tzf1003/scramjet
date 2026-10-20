@@ -1,3 +1,4 @@
+import { NativeObject } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { Object_keys, Reflect_get, Reflect_ownKeys } from "@/shared/snapshot";
 
@@ -44,7 +45,7 @@ export default function (client: ScramjetClient, self: Self) {
 					).length;
 
 				default:
-					if (prop in Object.prototype || typeof prop === "symbol") {
+					if (prop in NativeObject.prototype || typeof prop === "symbol") {
 						return Reflect_get(target, prop);
 					}
 

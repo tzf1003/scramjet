@@ -11,7 +11,8 @@ import {
 } from "./helpers.ts";
 
 const config: WebrtcTestConfig = {
-	mode: "relay",
+	mode: process.env.WEBRTC_TEST_MODE === "enforced" ? "enforced" : "relay",
+	networkIsolationVerified: process.env.WEBRTC_TEST_MODE === "enforced",
 	iceServers: [],
 	failClosed: true,
 	diagnostics: true,
@@ -54,7 +55,12 @@ const test = webrtcTest({
 				console.log(`[peerB page ${message.type()}]`, message.text())
 			);
 		}
-		await peerBPage.goto("http://127.0.0.1:18081/healthz");
+		await peerBPage.goto(
+			new URL(
+				"/healthz",
+				process.env.TURN_CREDENTIALS_URL ?? "http://127.0.0.1:18081"
+			).href
+		);
 		const peerB = peerBPage.evaluate(
 			async ({ url, iceServers }) => {
 				const tick = (ms: number) => {

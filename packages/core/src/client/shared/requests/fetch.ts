@@ -1,3 +1,4 @@
+import { NativeHeaders } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./xmlhttprequest";
 import { String } from "@/shared/snapshot";
@@ -51,7 +52,7 @@ export default function (client: ScramjetClient) {
 	client.Trap("Response.prototype.headers", {
 		get(ctx) {
 			const headers = ctx.get() as Headers;
-			const newHeaders = new Headers();
+			const newHeaders = new NativeHeaders();
 
 			for (const [key, value] of headers.entries()) {
 				if (key.toLowerCase() === "link") {

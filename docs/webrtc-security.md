@@ -51,13 +51,13 @@ process from emitting UDP if the browser decides to. That is why:
 
 For a client namespace, the only permitted WebRTC-related flows are:
 
-| Source      | Destination      | Protocol/port   | Purpose                                        |
-| ----------- | ---------------- | --------------- | ---------------------------------------------- |
-| client      | Scramjet origin  | TCP (443/HTTP)  | page, fetch, WebSocket                         |
-| client      | TURN server      | UDP/TCP 3478    | TURN allocation, relay traffic                 |
-| client      | TURN server      | TCP 5349        | TURN/TLS                                       |
-| client      | TURN relay range | UDP 49160-49200 | relayed media/data to the allocated relay port |
-| TURN server | target peer      | per allocation  | relayed media/data                             |
+| Source      | Destination                              | Protocol/port           | Purpose                        |
+| ----------- | ---------------------------------------- | ----------------------- | ------------------------------ |
+| client      | Scramjet origin                          | TCP (443/HTTP)          | page, fetch, WebSocket         |
+| client      | TURN server                              | UDP/TCP 3478            | TURN allocation, relay traffic |
+| client      | TURN server                              | TCP 5349                | TURN/TLS                       |
+| client      | TURN relay range on authorized addresses | UDP 49160-49200, opt-in | shared-server relay topology   |
+| TURN server | target peer                              | per allocation          | relayed media/data             |
 
 All other UDP, including STUN to arbitrary servers and direct ICE to peer host
 candidates, is dropped and counted. TCP egress other than the Scramjet origin and
@@ -87,7 +87,7 @@ deployment uses IP literals.
 
 | Event                                                     | Required behaviour                                                                    |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| TURN down                                                 | Connection fails; no host/srflx/prflx candidate is emitted or accepted                |
+| TURN down                                                 | Data delivery fails; only authorized relay paths remain available                     |
 | TURN credentials invalid/expired                          | Connection/allocation fails; refresh is attempted; no direct fallback                 |
 | Credential endpoint down                                  | New connections throw/never connect; retries with backoff                             |
 | Page calls `setConfiguration({iceTransportPolicy:"all"})` | Sanitised to `relay` + authorised servers; native `getConfiguration()` confirms       |
@@ -132,3 +132,23 @@ An enforced-mode claim requires all of:
    `docs/webrtc-test-report.md`.
 
 Without 1-6, the mode is reported as unverified.
+
+## 8. Verified policy shape and packet controls
+
+The verifier derives the expected endpoint list from the same `specification()`
+as the installer, checks the base chain and every rule, and rejects extra allows,
+changed verdicts or markers. Counter-only instrumentation leaves enforcement to
+the installed policy. Its JSON receipt identifies a kernel namespace and policy
+hash; the verifier itself must run in a trusted controlled environment.
+
+Client relay-port access is explicit (`TURN_CLIENT_RELAY_RANGE`, default `0`).
+The test topology enables only the configured relay range on the authorized TURN
+addresses. A listener-only deployment leaves that setting off. Captures describe
+and check the exact configured boundary.
+
+The analyzer uses packet direction as well as source addresses, so an additional
+NIC/VPN address cannot silently disappear from analysis. It permits the same
+IPv6 neighbor-discovery exception as the firewall and reports other unexpected
+IP protocols. Each acceptance run includes a control PCAP captured while native
+browser direct connectivity is deliberately enabled; analysis must detect it.
+DNS probes include TCP and UDP in both IP families.

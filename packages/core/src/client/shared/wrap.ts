@@ -1,3 +1,4 @@
+import { CapturedGlobal } from "@/shared/snapshot";
 import { iswindow } from "@client/entry";
 import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
@@ -5,8 +6,8 @@ import { ScramjetClient } from "@client/index";
 import { Object_defineProperty } from "@/shared/snapshot";
 
 export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
-	let wrappedParent: GlobalThis | null = null;
-	let wrappedTop: GlobalThis | null = null;
+	let wrappedParent: GlobalThis | Window | null = null;
+	let wrappedTop: GlobalThis | Window | null = null;
 	if (iswindow) {
 		try {
 			if (SCRAMJETCLIENT in self.parent) {
@@ -21,7 +22,7 @@ export function createWrapFn(client: ScramjetClient, self: GlobalThis) {
 			wrappedParent = self;
 		}
 		// instead of returning top, we need to return the uppermost parent that's inside a scramjet context
-		let current = self;
+		let current: GlobalThis | Window = self;
 		for (;;) {
 			const test = current.parent.self;
 			if (test === current) break; // there is no parent, actual or emulated.
@@ -160,7 +161,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	self.$scramitize = function (v) {
 		const t = typeof v;
 		if (t === "object" && v !== null) {
-			if (v === location) debugger;
+			if (v === CapturedGlobal.location) debugger;
 			if (iswindow) {
 				// if (v === self.parent) debugger;
 				if (v === self.top) debugger;
@@ -168,7 +169,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		} else if (t === "string") {
 			if (v.includes("scramjet")) debugger;
 			if (v.includes("~/sj")) debugger;
-			if (v.includes(location.origin)) debugger;
+			if (v.includes(CapturedGlobal.location.origin)) debugger;
 		}
 
 		return v;

@@ -34,7 +34,7 @@ export default function (client: ScramjetClient) {
 
 			if (!(SCRAMJETCLIENT in realwin)) {
 				// i don't believe it's possible for a just-opened window to already have scramjet loaded but just in case
-				client.init.hookSubcontext(realwin);
+				client.init.hookSubcontext(realwin as Self);
 			}
 
 			return realwin;

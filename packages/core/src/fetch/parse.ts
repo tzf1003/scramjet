@@ -23,6 +23,11 @@ export const QP = {
 	fakeDataURL: "$fakedataurl",
 } as const;
 
+export type ScramjetRequestMode = Extract<
+	RequestMode,
+	"cors" | "no-cors" | "same-origin" | "navigate"
+>;
+
 export type QueryParamKey = keyof typeof QP;
 
 export type QueryParams = Partial<Record<QueryParamKey, string>>;
@@ -108,7 +113,7 @@ export function parseRequest(
 	const fetchMode = ["cors", "no-cors", "same-origin", "navigate"].includes(
 		params.mode
 	)
-		? params.mode
+		? (params.mode as ScramjetRequestMode)
 		: undefined;
 	const destination =
 		(params.destination as RequestDestination | undefined) ||

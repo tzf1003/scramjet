@@ -9,6 +9,8 @@ import socket
 import subprocess
 import time
 import urllib.request
+from runner_control import run_controlled
+from evidence import source_identity, write_manifest
 
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "coturn/coturn:4.18.0-r0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3"
@@ -26,9 +28,13 @@ def main():
     parser.add_argument("--parallel", type=int, default=1)
     parser.add_argument("--transport", choices=["udp", "tcp", "tls"], default="udp")
     args = parser.parse_args()
-    if args.parallel < 1:
-        parser.error("--parallel must be positive")
+    if args.parallel != 1:
+        parser.error("--parallel must be 1: TURN fault injection owns the shared relay; connection concurrency is tested inside each test")
     output = Path(args.output).resolve(); output.mkdir(parents=True, exist_ok=True)
+    identity = source_identity(ROOT)
+    (output / "source.json").write_text(json.dumps(identity, indent=2) + "\n")
+    subprocess.run(["sh", str(ROOT / "tests/webrtc/coturn/generate-certs.sh")],
+                   check=True, capture_output=True, text=True)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
         route.connect(("1.1.1.1", 53)); host = route.getsockname()[0]
     run_id = "sj-webrtc-" + secrets.token_hex(5)
@@ -37,7 +43,7 @@ def main():
     env.update(TURN_STATIC_AUTH_SECRET=secrets.token_hex(32), TURN_EXTERNAL_IP=host,
                TURN_TEST_ALLOW_SELF="1", TURN_ALLOWED_PEER_IP=host + ",127.0.0.1,172.17.0.1",
                TURN_LISTENING_PORT="13480", TURN_TLS_PORT="15351", TURN_MIN_PORT="50350", TURN_MAX_PORT="50390",
-               TURN_URLS=url, TURN_TTL="120", PORT="18082", ALLOWED_ORIGIN="*",
+               TURN_URLS=url, TURN_TTL=os.environ.get("TURN_TTL", "120"), PORT="18082", ALLOWED_ORIGIN="*",
                ALLOW_ANONYMOUS_TEST_ONLY="1", CREDENTIAL_RATE_LIMIT="1000")
     owned = []
     try:
@@ -69,19 +75,29 @@ def main():
             test_env = dict(os.environ, TURN_CREDENTIALS_URL="http://127.0.0.1:18082/turn-credentials",
                             RUNWAY_BROWSER=browser, WEBRTC_FAKE_MEDIA="1", WEBRTC_EXPOSE_HOST_CANDIDATES="1",
                             WEBRTC_INSECURE_TLS="1" if args.transport == "tls" else "0", WEBRTC_RUN_ID=run_id,
-                            WEBRTC_EVIDENCE_DIR=str(output))
+                            WEBRTC_EVIDENCE_DIR=str(output), WEBRTC_TURN_CONTROL_DIR=str(output))
             started = time.monotonic()
-            invocation = ["npx", "-y", "node@24", "--experimental-strip-types", "--no-warnings", "src/index.ts", args.filter, "--parallel", str(args.parallel)]
+            node_major = int(command("node", "--version", capture_output=True, text=True).stdout.strip().split(".")[0][1:])
+            node = ["node"] if node_major >= 24 else ["npx", "--offline", "node@24"]
+            invocation = [*node, "--experimental-strip-types", "--no-warnings", "src/index.ts", args.filter, "--parallel", str(args.parallel)]
             log = output / f"{browser}-{args.transport}.log"
             with log.open("w") as stream:
-                result = command(*invocation, cwd=ROOT / "packages/runway", env=test_env, stdout=stream, stderr=subprocess.STDOUT)
-            item = {"browser": browser, "transport": args.transport, "exitCode": result.returncode,
+                exit_code = run_controlled(invocation, output=output, turn=run_id + "-turn", stream=stream,
+                                           relay_range=(50350, 50390), cwd=ROOT / "packages/runway", env=test_env)
+            item = {"browser": browser, "transport": args.transport, "exitCode": exit_code,
                     "elapsedSeconds": round(time.monotonic() - started, 2), "log": str(log)}
             print(json.dumps(item), flush=True); results.append(item)
-        (output / "results.json").write_text(json.dumps({"runId": run_id, "image": IMAGE, "results": results}, indent=2) + "\n")
+        (output / "results.json").write_text(json.dumps({"runId": run_id, "image": IMAGE,
+            "gitSha": identity["gitSha"], "sourceSha256": identity["sourceSha256"],
+            "credentialTtlSeconds": env["TURN_TTL"], "dataSoakSeconds": os.environ.get("WEBRTC_SOAK_SECONDS", "15"),
+            "mediaSecondsPerPhase": os.environ.get("WEBRTC_MEDIA_SOAK_SECONDS", "2.5"), "results": results}, indent=2) + "\n")
         return 1 if any(item["exitCode"] for item in results) else 0
     finally:
-        for name in reversed(owned): command("docker", "rm", "-f", name, capture_output=True)
+        for name in reversed(owned):
+            logs = command("docker", "logs", name, capture_output=True, text=True)
+            (output / (name.rsplit("-", 1)[-1] + ".log")).write_text(logs.stdout + logs.stderr)
+            command("docker", "rm", "-f", name, capture_output=True)
+        write_manifest(output)
 
 
 if __name__ == "__main__":

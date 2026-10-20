@@ -10,18 +10,49 @@ import subprocess
 import sys
 import time
 from urllib.parse import urlsplit
-from policy import command, digest, table_name, address, port
+from policy import command, digest, table_name, address, port, specification
 
 
-def counter(name):
-    rules = json.loads(command("nft", "--json", "list", "table", "inet", name).stdout)["nftables"]
-    for item in rules:
-        rule = item.get("rule", {})
-        if rule.get("comment") == "scramjet-webrtc-default-deny":
-            for expr in rule.get("expr", []):
-                if "counter" in expr:
-                    return expr["counter"]["packets"]
-    raise ValueError("default-deny counter is missing")
+def deny_anchor(name):
+    items = json.loads(command("nft", "--json", "list", "table", "inet", name).stdout)["nftables"]
+    chains = [item["chain"] for item in items if "chain" in item]
+    if len(chains) != 1 or any(chains[0].get(key) != value for key, value in {
+        "family": "inet", "table": name, "name": "output", "type": "filter",
+        "hook": "output", "policy": "drop",
+    }.items()):
+        raise ValueError("expected a single default-drop output base chain")
+    rules = [item["rule"] for item in items if "rule" in item]
+    markers = [rule for rule in rules if rule.get("comment") == "scramjet-webrtc-default-deny"]
+    if len(markers) != 1 or not rules or markers[0] != rules[-1]:
+        raise ValueError("expected one final default-deny rule")
+    rule = markers[0]
+    if rule.get("chain") != "output" or rule.get("table") != name or rule.get("family") != "inet":
+        raise ValueError("default-deny rule is outside the output chain")
+    expressions = rule.get("expr", [])
+    if len(expressions) != 2 or set(expressions[0]) != {"counter"} or expressions[1] != {"drop": None}:
+        raise ValueError("default-deny must be an unconditional counter followed by drop")
+    return rule["handle"]
+
+
+def verify_allowlist(name):
+    items = json.loads(command("nft", "--json", "list", "table", "inet", name).stdout)["nftables"]
+    chains = [item["chain"] for item in items if "chain" in item]
+    if chains[0].get("prio") != 0:
+        raise ValueError("output chain priority differs from the installed policy")
+    def normalize(value):
+        if isinstance(value, dict):
+            if "counter" in value:
+                return {"counter": {}}
+            if "set" in value:
+                return {"set": sorted(value["set"], key=str)}
+            return {key: normalize(item) for key, item in value.items() if key not in ("handle", "index")}
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        return value
+    actual = [normalize(item["rule"]) for item in items if "rule" in item]
+    _, expected, _ = specification()
+    if actual != normalize(expected):
+        raise ValueError("output rules differ from the configured endpoint allowlist")
 
 
 def udp_target(value):
@@ -41,16 +72,13 @@ def tcp_target(value):
 def probe(name, protocol, host, number):
     family = socket.AF_INET6 if host.version == 6 else socket.AF_INET
     command("ip", "-6" if host.version == 6 else "-4", "route", "get", str(host))
-    rules = json.loads(command("nft", "--json", "list", "table", "inet", name).stdout)["nftables"]
-    anchor = next((item["rule"]["handle"] for item in rules if item.get("rule", {}).get("comment") == "scramjet-webrtc-default-deny"), None)
-    if anchor is None:
-        raise ValueError("default-deny rule is missing")
+    anchor = deny_anchor(name)
     marker = "sj-probe-" + secrets.token_hex(8)
     family_name = "ip6" if host.version == 6 else "ip"
-    # Count only this destination after every real allow rule. This cannot turn
-    # an earlier allow into a successful isolation check or borrow background drops.
+    # Observe this destination without changing its verdict. The existing final
+    # drop must enforce denial; instrumentation must never make a bad policy pass.
     command("nft", "insert", "rule", "inet", name, "output", "position", str(anchor),
-            family_name, "daddr", str(host), protocol, "dport", str(number), "counter", "drop", "comment", marker)
+            family_name, "daddr", str(host), protocol, "dport", str(number), "counter", "comment", marker)
     handle = None
     try:
         def observation():
@@ -86,6 +114,8 @@ def probe(name, protocol, host, number):
 def verify():
     name = table_name()
     initial = digest(name)
+    deny_anchor(name)
+    verify_allowlist(name)
     targets = [("tcp", *tcp_target(os.environ.get("UNAUTHORIZED_TCP_URL", "http://169.254.169.254/"))),
                ("udp", *udp_target(os.environ["UNAUTHORIZED_UDP_TARGET"]))]
     v6tcp = os.environ.get("UNAUTHORIZED_IPV6_TCP_URL")
@@ -98,15 +128,27 @@ def verify():
         targets.append(("udp", *udp_target(v6udp)))
     if os.environ.get("UNAUTHORIZED_DNS_TARGET"):
         targets.append(("udp", *udp_target(os.environ["UNAUTHORIZED_DNS_TARGET"])))
+        targets.append(("tcp", *udp_target(os.environ["UNAUTHORIZED_DNS_TARGET"])))
+    if os.environ.get("UNAUTHORIZED_IPV6_DNS_TARGET"):
+        for protocol in ("udp", "tcp"):
+            targets.append((protocol, *udp_target(os.environ["UNAUTHORIZED_IPV6_DNS_TARGET"])))
+    if os.environ.get("UNAUTHORIZED_RELAY_PROBE_TARGET"):
+        targets.append(("udp", *udp_target(os.environ["UNAUTHORIZED_RELAY_PROBE_TARGET"])))
     probes = [probe(name, protocol, host, number) for protocol, host, number in targets]
     for key in ("TURN_HOST", "TURN_HOST_V6"):
         host = address(key, key == "TURN_HOST")
         if host is not None:
-            with socket.create_connection((str(host), port("TURN_PORT", 13478)), timeout=2):
-                pass
+            family = socket.AF_INET6 if host.version == 6 else socket.AF_INET
+            with socket.socket(family, socket.SOCK_STREAM) as turn_probe:
+                turn_probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                turn_probe.settimeout(2)
+                source_port = int(os.environ.get("TURN_PROBE_SOURCE_PORT", "0"))
+                turn_probe.bind(("::" if host.version == 6 else "0.0.0.0", source_port))
+                turn_probe.connect((str(host), port("TURN_PORT", 13478)))
+
     if digest(name) != initial:
         raise ValueError("network policy changed during verification")
-    result = {"policyVersion": 2, "table": name, "policySha256": initial,
+    result = {"policyVersion": 3, "table": name, "policySha256": initial,
               "networkNamespace": os.readlink("/proc/self/ns/net"),
               "verifiedAt": time.time(), "runId": os.environ.get("WEBRTC_RUN_ID", secrets.token_hex(12)),
               "probes": probes, "ok": True}

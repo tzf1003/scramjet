@@ -1,3 +1,4 @@
+import { NativeTextDecoder, NativeUint8Array } from "@/shared/snapshot";
 import { BareResponse } from "@mercuryworkshop/proxy-transports";
 import {
 	BodyType,
@@ -28,7 +29,7 @@ export async function rewriteBody(
 		case "document":
 			if (isHtmlMimeType(response.headers.get("content-type") ?? "")) {
 				const buf = await response.arrayBuffer();
-				const bytes = new Uint8Array(buf);
+				const bytes = new NativeUint8Array(buf);
 				const encoding = sniffEncoding(
 					bytes,
 					response.headers.get("content-type")
@@ -56,7 +57,7 @@ export async function rewriteBody(
 				}
 
 				let rewritten = rewriteJs(
-					new Uint8Array(await response.arrayBuffer()),
+					new NativeUint8Array(await response.arrayBuffer()),
 					response.url,
 					handler.context,
 					parsed.meta,
@@ -66,8 +67,8 @@ export async function rewriteBody(
 				if (
 					flagEnabled("debugSourceURL", handler.context, parsed.meta.origin)
 				) {
-					if (rewritten instanceof Uint8Array) {
-						rewritten = new TextDecoder().decode(rewritten);
+					if (typeof rewritten !== "string") {
+						rewritten = new NativeTextDecoder().decode(rewritten);
 					}
 					rewritten += `\n//# sourceURL=${parsed.url.href}`;
 				}
@@ -81,7 +82,7 @@ export async function rewriteBody(
 		case "sharedworker":
 		case "worker":
 			return rewriteWorkers(
-				new Uint8Array(await response.arrayBuffer()),
+				new NativeUint8Array(await response.arrayBuffer()),
 				response.url,
 				handler.context,
 				parsed.meta,

@@ -1,10 +1,117 @@
 import assert from "node:assert/strict";
+import { fetchTurnCredentials } from "./fixtures.ts";
+import {
+	initializeDataPeer,
+	negotiateDataPeers,
+	expectDataEcho,
+	readDataPeer,
+	closeDataPeers,
+} from "./peers.ts";
 import { webrtcPageHtml, webrtcTest } from "./helpers.ts";
 
 const TURN = "turn:127.0.0.1:13478?transport=udp";
 const DEAD_TURN = "turn:127.0.0.1:13479?transport=udp";
 
+const invalidConfig = {
+	mode: "relay" as const,
+	iceServers: [] as RTCIceServer[],
+	failClosed: true,
+};
+const verifyFailure: Parameters<typeof webrtcTest>[0]["fn"] = async (
+	ctx,
+	frame
+) => {
+	const nativeA = await ctx.page.context().newPage();
+	const nativeB = await ctx.page.context().newPage();
+	try {
+		// Prove this topology can expose a missing hook before testing denial.
+		await nativeA.evaluate(initializeDataPeer, {
+			config: { iceServers: [] },
+			sender: true,
+		});
+		await nativeB.evaluate(initializeDataPeer, {
+			config: { iceServers: [] },
+			sender: false,
+		});
+		await negotiateDataPeers(nativeA, nativeB);
+		await expectDataEcho(nativeA);
+		await closeDataPeers(nativeA, nativeB);
+		await frame.evaluate(initializeDataPeer, {
+			config: {
+				iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+				iceTransportPolicy: "all",
+			},
+			sender: true,
+		});
+		await nativeB.evaluate(initializeDataPeer, {
+			config: { iceServers: [] },
+			sender: false,
+		});
+		for (const restart of [false, true]) {
+			const { offer } = await negotiateDataPeers(frame, nativeB, restart);
+			assert.match(offer.description.sdp!, /^m=application/m);
+			assert.notEqual(
+				offer.gathering,
+				"new",
+				"ICE gathering must actually run"
+			);
+			await new Promise((resolve) => setTimeout(resolve, 2500));
+			const result = await frame.evaluate(readDataPeer);
+			assert.notEqual(
+				result.connection,
+				"connected",
+				"an unreachable TURN must never connect to the reachable direct peer"
+			);
+			assert.notEqual(result.channel, "open");
+			assert.deepEqual(result.echoes, []);
+			assert.deepEqual(
+				result.localTypes.filter((type) => type !== "relay"),
+				[]
+			);
+			assert.ok(
+				result.candidates.every((line) => / typ relay(?: |$)/.test(line))
+			);
+		}
+		console.log(
+			"TURN-down control: native direct echo passed; proxied direct path and ICE restart blocked"
+		);
+	} finally {
+		await closeDataPeers(frame, nativeA, nativeB);
+		await nativeA.close();
+		await nativeB.close();
+	}
+};
+
 export default [
+	webrtcTest({
+		name: "webrtc-hook-control-detects-direct-mode",
+		html: webrtcPageHtml(),
+		config: { mode: "off" },
+		async fn(ctx, frame) {
+			await assert.rejects(
+				() => verifyFailure(ctx, frame),
+				/unreachable TURN must never connect|notStrictEqual|host/
+			);
+		},
+	}),
+
+	webrtcTest({
+		name: "webrtc-hook-fail-closed-invalid-credentials",
+		html: webrtcPageHtml(),
+		config: invalidConfig,
+		async prepare() {
+			const value = await fetchTurnCredentials();
+			invalidConfig.iceServers = [
+				{
+					urls: value.urls,
+					username: "1:expired",
+					credential: "invalid-authentication",
+				},
+			];
+		},
+		fn: verifyFailure,
+	}),
+
 	webrtcTest({
 		name: "webrtc-hook-forces-relay-and-authorised-turn",
 		html: webrtcPageHtml(),
@@ -143,6 +250,7 @@ export default [
 		async fn(_ctx, frame) {
 			const result = await frame.evaluate(async () => {
 				const pc = new RTCPeerConnection();
+				pc.createDataChannel("gathering-probe");
 				const offer = await pc.createOffer();
 				await pc.setLocalDescription(offer);
 				const settle = Promise.withResolvers<void>();
@@ -163,8 +271,19 @@ export default [
 					return types;
 				});
 				pc.close();
-				return { types, gathering, pairTypes };
+				return {
+					types,
+					gathering,
+					pairTypes,
+					media: /^m=application/m.test(sdp),
+				};
 			});
+			assert.equal(
+				result.media,
+				true,
+				"the offer must contain a real ICE workload"
+			);
+			assert.notEqual(result.gathering, "new");
 			assert.deepEqual(
 				result.types.filter((type) => type !== "relay"),
 				[],
@@ -187,49 +306,7 @@ export default [
 			failClosed: true,
 			diagnostics: true,
 		},
-		async fn(_ctx, frame) {
-			const result = await frame.evaluate(async () => {
-				const pc = new RTCPeerConnection({
-					iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-					iceTransportPolicy: "all",
-				});
-				const offer = await pc.createOffer();
-				await pc.setLocalDescription(offer);
-				const settle = Promise.withResolvers<void>();
-				setTimeout(settle.resolve, 8000);
-				await settle.promise;
-				const report = await pc.getStats();
-				const types: string[] = [];
-				report.forEach((stat) => {
-					if (stat.type === "local-candidate") {
-						types.push(String(stat.candidateType));
-					}
-				});
-				const state = {
-					connection: pc.connectionState,
-					ice: pc.iceConnectionState,
-					types,
-					sdpCandidates: [
-						...(pc.localDescription?.sdp ?? "").matchAll(/ typ (\S+)/g),
-					].map((match) => match[1]),
-				};
-				pc.close();
-				return state;
-			});
-			assert.notEqual(result.connection, "connected");
-			assert.ok(
-				["failed", "disconnected", "new", "checking"].includes(result.ice),
-				`unexpected ICE state: ${result.ice}`
-			);
-			assert.deepEqual(
-				result.types.filter((type) => type !== "relay"),
-				[]
-			);
-			assert.deepEqual(
-				result.sdpCandidates.filter((type) => type !== "relay"),
-				[]
-			);
-		},
+		fn: verifyFailure,
 	}),
 
 	webrtcTest({

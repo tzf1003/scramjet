@@ -1,3 +1,4 @@
+import { NativeReflect } from "@/shared/snapshot";
 // delete all chrome specific apis, or apis that are not supported by any browser other than chrome
 // these are not worth emulating and typically cause issues
 
@@ -6,6 +7,7 @@ import { ScramjetClient } from "@client/index";
 
 // type self as any here, most of these are not defined in the types
 export default function (client: ScramjetClient, self: any) {
+	const { Navigator: NativeNavigator } = self;
 	const del = (name: string) => {
 		const split = name.split(".");
 		const prop = split.pop();
@@ -36,7 +38,7 @@ export default function (client: ScramjetClient, self: any) {
 	if (!iswindow) return;
 	// DOM specific ones below here
 
-	Reflect.deleteProperty(Navigator.prototype, "serviceWorker");
+	NativeReflect.deleteProperty(NativeNavigator.prototype, "serviceWorker");
 	del("MediaDevices.prototype.setCaptureHandleConfig");
 
 	// web bluetooth api

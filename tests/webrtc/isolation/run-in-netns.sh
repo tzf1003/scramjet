@@ -62,6 +62,9 @@ ip netns exec "$NETNS" ip addr add "$NS_IP/24" dev "$NS_IF"
 ip netns exec "$NETNS" ip -6 addr add "$NS_IPV6/64" dev "$NS_IF" nodad
 ip netns exec "$NETNS" ip link set "$NS_IF" up
 ip netns exec "$NETNS" ip link set lo up
+# This namespace owns static addresses. Keep them configured during a link
+# outage, as IPv4 does, so link recovery restores the same dual-stack network.
+ip netns exec "$NETNS" python3 -c 'from pathlib import Path; import sys; Path("/proc/sys/net/ipv6/conf", sys.argv[1], "keep_addr_on_down").write_text("1\n")' "$NS_IF"
 ip netns exec "$NETNS" ip route add default via "$HOST_IP"
 ip netns exec "$NETNS" ip -6 route add default via "$HOST_IPV6"
 if [ "${MASQUERADE:-0}" = 1 ]; then
@@ -99,6 +102,8 @@ export UNAUTHORIZED_UDP_TARGET="${UNAUTHORIZED_UDP_TARGET:-$HOST_IP:18084}"
 export UNAUTHORIZED_IPV6_TCP_URL="${UNAUTHORIZED_IPV6_TCP_URL:-http://[$HOST_IPV6]:18084/}"
 export UNAUTHORIZED_IPV6_UDP_TARGET="${UNAUTHORIZED_IPV6_UDP_TARGET:-[$HOST_IPV6]:18084}"
 export UNAUTHORIZED_DNS_TARGET="${UNAUTHORIZED_DNS_TARGET:-$HOST_IP:53}"
+export UNAUTHORIZED_IPV6_DNS_TARGET="${UNAUTHORIZED_IPV6_DNS_TARGET:-[$HOST_IPV6]:53}"
+export UNAUTHORIZED_RELAY_PROBE_TARGET="${UNAUTHORIZED_RELAY_PROBE_TARGET:-$TURN_HOST:$((${TURN_RELAY_MAX:-50200} + 1))}"
 export REQUIRE_IPV6=1 ALLOW_LOOPBACK=0
 ip netns exec "$NETNS" sh "$SCRIPT_DIR/setup-nftables.sh"
 ip netns exec "$NETNS" sh "$SCRIPT_DIR/verify-isolation.sh"

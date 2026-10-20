@@ -50,6 +50,9 @@ importers:
       '@rspack/core':
         specifier: ^1.5.8
         version: 1.6.7(@swc/helpers@0.5.17)
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.9.1
       ava:
         specifier: ^6.4.1
         version: 6.4.1(rollup@4.52.5)
@@ -71,9 +74,12 @@ importers:
       tsc-alias:
         specifier: ^1.8.16
         version: 1.8.16
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
       vite:
         specifier: ^7.3.0
-        version: 7.3.0(@types/node@26.0.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1)
+        version: 7.3.0(@types/node@24.9.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1)
 
   packages/bootstrap:
     dependencies:
@@ -6711,3 +6717,18 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   yoctocolors@2.1.2: {}
+
+  vite@7.3.0(@types/node@24.9.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1):
+    dependencies:
+      esbuild: 0.27.2
+      fdir: 6.5.0(picomatch@4.0.3)
+      picomatch: 4.0.3
+      postcss: 8.5.6
+      rollup: 4.52.5
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 24.9.1
+      fsevents: 2.3.3
+      jiti: 2.6.1
+      terser: 5.44.1
+      yaml: 2.8.1

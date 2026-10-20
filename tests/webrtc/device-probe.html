@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scramjet WebRTC device acceptance</title>
+<style>
+body { font: 16px system-ui; max-width: 1000px; margin: 24px auto; padding: 0 16px; }
+button { font: inherit; padding: 8px; margin: 4px; } textarea { width: 100%; height: 120px; }
+video { width: min(100%, 320px); background: #111; } pre { overflow: auto; white-space: pre-wrap; }
+</style>
+<h1>WebRTC device acceptance</h1>
+<p>Open one copy through the configured Scramjet deployment and another on an independent peer. Use HTTPS for camera and screen permissions. Exchange the gathered offer and answer below.</p>
+<p id="status" role="status">Ready</p>
+<button id="camera">Capture camera and microphone</button>
+<button id="screen">Capture screen</button>
+<button id="offer">Create offer</button>
+<button id="apply">Apply remote offer or answer</button>
+<button id="restart">Restart ICE and create offer</button>
+<button id="send">Verify 128 KiB round trip</button>
+<button id="close">Close connection</button>
+<button id="export">Export evidence JSON</button>
+<label for="local">Local description (copy to the other device)</label><textarea id="local" readonly></textarea>
+<label for="remote">Remote description</label><textarea id="remote"></textarea>
+<h2>Received media</h2><div id="media"></div>
+<h2>Observed results</h2><pre id="results"></pre>
+<script type="module">
+const status = document.querySelector("#status"), results = document.querySelector("#results");
+const evidence = { startedAt: new Date().toISOString(), userAgent: navigator.userAgent, secureContext: isSecureContext,
+  events: [], samples: [], integrity: [], permissions: [] };
+let pc, channel, sampleTimer;
+const streams = [];
+const pending = new Map();
+const hash = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), value => value.toString(16).padStart(2,"0")).join("");
+const record = (type, detail) => { evidence.events.push({ at: new Date().toISOString(), type, detail }); results.textContent = JSON.stringify(evidence, null, 2); };
+const attach = dc => {
+  channel = dc; dc.binaryType = "arraybuffer";
+  dc.onopen = () => record("channel-open", dc.label);
+  dc.onclose = () => record("channel-close", dc.label);
+  dc.onmessage = async event => {
+    if (typeof event.data === "string") {
+      const receipt = JSON.parse(event.data);
+      const request = pending.get(receipt.sha256);
+      if (request) { pending.delete(receipt.sha256); evidence.integrity.push({ bytes: request.bytes, sha256: receipt.sha256, rttMs: performance.now()-request.start, ok: true }); record("integrity-verified", receipt.sha256); }
+    } else {
+      const bytes = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data;
+      dc.send(JSON.stringify({ sha256: await hash(bytes) }));
+      record("binary-received", { bytes: bytes.byteLength });
+    }
+  };
+};
+function ensurePeer() {
+  if (pc && pc.signalingState !== "closed") return pc;
+  pc = new RTCPeerConnection({ iceServers: [], iceTransportPolicy: "all", bundlePolicy: "max-bundle" });
+  record("native-configuration", { policy: pc.getConfiguration().iceTransportPolicy,
+    urls: (pc.getConfiguration().iceServers ?? []).flatMap(server => server.urls) });
+  for (const event of ["connectionstatechange", "iceconnectionstatechange", "negotiationneeded"])
+    pc.addEventListener(event, () => record(event, { connection: pc.connectionState, ice: pc.iceConnectionState, signaling: pc.signalingState }));
+  pc.onicecandidate = event => { if (event.candidate) record("candidate", { type: event.candidate.type, protocol: event.candidate.protocol }); };
+  pc.ondatachannel = event => attach(event.channel);
+  pc.ontrack = event => { const media = document.createElement(event.track.kind === "video" ? "video" : "audio");
+    media.controls = true; media.autoplay = true; media.playsInline = true; media.srcObject = new MediaStream([event.track]);
+    document.querySelector("#media").append(media); void media.play().catch(error => record("playback-permission", error.message));
+    record("track-received", { kind: event.track.kind, id: event.track.id }); };
+  for (const stream of streams) for (const track of stream.getTracks()) pc.addTrack(track,stream);
+  clearInterval(sampleTimer);
+  sampleTimer = setInterval(async () => {
+    if (pc.connectionState === "closed") return;
+    try {
+      const stats = await pc.getStats(); const samples = [];
+      stats.forEach(row => {
+        if (["inbound-rtp", "outbound-rtp", "candidate-pair"].includes(row.type)) samples.push({ type: row.type, id: row.id, kind: row.kind,
+          bytesSent: row.bytesSent, bytesReceived: row.bytesReceived, framesDecoded: row.framesDecoded, packetsLost: row.packetsLost,
+          jitter: row.jitter, totalAudioEnergy: row.totalAudioEnergy, totalSamplesReceived: row.totalSamplesReceived,
+          state: row.state, nominated: row.nominated, rtt: row.currentRoundTripTime });
+        if (row.type === "transport" && row.selectedCandidatePairId) {
+          const pair = stats.get(row.selectedCandidatePairId), local = stats.get(pair.localCandidateId), remote = stats.get(pair.remoteCandidateId);
+          samples.push({ type: "selected-pair", localType: local?.candidateType, localAddress: local?.address, localPort: local?.port,
+            relayProtocol: local?.relayProtocol, turnUrl: local?.url, remoteType: remote?.candidateType, remoteAddress: remote?.address, remotePort: remote?.port });
+        }
+      });
+      evidence.samples.push({ at: new Date().toISOString(), samples });
+      if (evidence.samples.length > 3600) evidence.samples.shift();
+      results.textContent = JSON.stringify(evidence, null, 2);
+    } catch (error) { record("stats-error",error.message); }
+  },1000);
+  return pc;
+}
+async function gather() {
+  if (pc.iceGatheringState !== "complete") await new Promise((resolve,reject) => {
+    const timeout = setTimeout(() => { pc.removeEventListener("icegatheringstatechange",changed); reject(new Error("ICE gathering timed out")); },20000);
+    function changed() { if (pc.iceGatheringState === "complete") { clearTimeout(timeout); pc.removeEventListener("icegatheringstatechange",changed); resolve(); } }
+    pc.addEventListener("icegatheringstatechange",changed); changed();
+  });
+  document.querySelector("#local").value = JSON.stringify(pc.localDescription);
+}
+const actions = {
+  camera: async () => { const stream = await navigator.mediaDevices.getUserMedia({ audio:true,video:true }); const connection=ensurePeer(); streams.push(stream); for (const track of stream.getTracks()) connection.addTrack(track,stream); evidence.permissions.push("camera+microphone-granted"); },
+  screen: async () => { const stream = await navigator.mediaDevices.getDisplayMedia({ video:true }); const connection=ensurePeer(); streams.push(stream); for (const track of stream.getTracks()) connection.addTrack(track,stream); evidence.permissions.push("display-granted"); },
+  offer: async () => { ensurePeer(); if (!channel || channel.readyState === "closed") attach(pc.createDataChannel("device-acceptance")); await pc.setLocalDescription(await pc.createOffer()); await gather(); },
+  apply: async () => { ensurePeer(); const description = JSON.parse(document.querySelector("#remote").value); await pc.setRemoteDescription(description);
+    if (description.type === "offer") { await pc.setLocalDescription(await pc.createAnswer()); await gather(); } },
+  restart: async () => { ensurePeer().restartIce(); await actions.offer(); },
+  send: async () => { if (channel?.readyState !== "open") throw new Error("DataChannel is not open"); const bytes = crypto.getRandomValues(new Uint8Array(65536));
+    const data = new Uint8Array(131072); data.set(bytes); data.set(bytes,65536); const sha256 = await hash(data); pending.set(sha256,{ bytes:data.length,start:performance.now() }); channel.send(data);
+    setTimeout(() => { if (pending.delete(sha256)) record("integrity-timeout",sha256); },20000); },
+  close: async () => { pc?.close(); clearInterval(sampleTimer); for (const stream of streams) for (const track of stream.getTracks()) track.stop(); streams.length=0; record("closed",true); },
+  export: async () => { const link=document.createElement("a");link.href=URL.createObjectURL(new Blob([JSON.stringify(evidence,null,2)],{type:"application/json"})); link.download="webrtc-device-evidence.json";link.click();URL.revokeObjectURL(link.href); },
+};
+for (const [id,action] of Object.entries(actions)) document.getElementById(id).onclick=async()=>{try{await action();status.textContent=`${id}: complete`;}catch(error){status.textContent=error.message;record("error",{action:id,message:error.message});}};
+</script>
+</html>

@@ -1,3 +1,4 @@
+import { NativeObject, NativeSymbol, Nativeconsole } from "@/shared/snapshot";
 import { flagEnabled } from "@/shared";
 import { ScramjetClient } from "@client/index";
 import { Reflect_apply } from "@/shared/snapshot";
@@ -11,12 +12,12 @@ export function argdbg(arg, recurse = []) {
 		case "object":
 			if (
 				arg &&
-				arg[Symbol.iterator] &&
-				typeof arg[Symbol.iterator] === "function"
+				arg[NativeSymbol.iterator] &&
+				typeof arg[NativeSymbol.iterator] === "function"
 			)
 				for (const prop in arg) {
 					// make sure it's not a getter
-					const desc = Object.getOwnPropertyDescriptor(arg, prop);
+					const desc = NativeObject.getOwnPropertyDescriptor(arg, prop);
 					if (desc && desc.get) continue;
 
 					const ar = arg[prop];
@@ -29,7 +30,7 @@ export function argdbg(arg, recurse = []) {
 }
 
 export default function (client: ScramjetClient, self: GlobalThis) {
-	const warn = console.warn;
+	const warn = Nativeconsole.warn;
 	self.$scramerr = function scramerr(e) {
 		warn("CAUGHT ERROR", e);
 	};

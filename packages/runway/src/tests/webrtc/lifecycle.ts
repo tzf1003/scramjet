@@ -7,7 +7,8 @@ import {
 } from "./helpers.ts";
 
 const config: WebrtcTestConfig = {
-	mode: "relay",
+	mode: process.env.WEBRTC_TEST_MODE === "enforced" ? "enforced" : "relay",
+	networkIsolationVerified: process.env.WEBRTC_TEST_MODE === "enforced",
 	iceServers: [],
 	failClosed: true,
 };
@@ -15,7 +16,6 @@ const config: WebrtcTestConfig = {
 export default [
 	webrtcTest({
 		name: "webrtc-relay-media-and-channel-lifecycle",
-		browsers: ["chromium"],
 		html: webrtcPageHtml(),
 		config,
 		async prepare() {
@@ -46,6 +46,7 @@ export default [
 				const pc = new RTCPeerConnection({
 					iceServers: servers,
 					iceTransportPolicy: "relay",
+					bundlePolicy: "max-bundle",
 				});
 				const state: any = {
 					pc,
@@ -55,6 +56,7 @@ export default [
 					senders: [],
 					resources: [],
 					tracks: [],
+					receivers: [],
 				};
 				(window as any).__rtcLifecycle = state;
 				const channel = (dc: RTCDataChannel) => {
@@ -78,7 +80,54 @@ export default [
 					};
 				};
 				pc.ondatachannel = (event) => channel(event.channel);
-				pc.ontrack = (event) => state.tracks.push(event.track.kind);
+				pc.ontrack = (event) => {
+					state.tracks.push(event.track.kind);
+					const item: any = {
+						receiver: event.receiver,
+						transceiver: event.transceiver,
+						track: event.track,
+					};
+					if (event.track.kind === "video") {
+						const video = document.createElement("video");
+						video.muted = true;
+						video.autoplay = true;
+						video.playsInline = true;
+						video.srcObject = new MediaStream([event.track]);
+						document.body.append(video);
+						void video.play().catch(() => {});
+						item.video = video;
+						item.canvas = document.createElement("canvas");
+						item.canvas.width = item.canvas.height = 8;
+					} else {
+						const playback = document.createElement("audio");
+						playback.srcObject = new MediaStream([event.track]);
+						playback.autoplay = true;
+						playback.volume = 0;
+						document.body.append(playback);
+						void playback.play().catch(() => {});
+						state.audio ??= new AudioContext();
+						const source = state.audio.createMediaStreamSource(
+							new MediaStream([event.track])
+						);
+						item.analyser = state.audio.createAnalyser();
+						item.analyser.fftSize = 2048;
+						source.connect(item.analyser);
+						const mute = state.audio.createGain();
+						mute.gain.value = 0;
+						item.analyser.connect(mute);
+						mute.connect(state.audio.destination);
+					}
+					state.receivers.push(item);
+				};
+				const unlock = document.createElement("button");
+				unlock.id = "webrtc-unlock-audio";
+				unlock.textContent = "Start media";
+				unlock.onclick = () => {
+					void state.audio?.resume();
+					for (const media of document.querySelectorAll("audio,video"))
+						void (media as HTMLMediaElement).play().catch(() => {});
+				};
+				document.body.append(unlock);
 				if (sender) {
 					channel(pc.createDataChannel("initial"));
 					const canvas = document.createElement("canvas");
@@ -118,6 +167,116 @@ export default [
 					servers: config.iceServers as RTCIceServer[],
 					sender: true,
 				});
+				await frame.locator("#webrtc-unlock-audio").click();
+				const mediaSeconds = Number(
+					process.env.WEBRTC_MEDIA_SOAK_SECONDS ?? 2.5
+				);
+				assert.ok(
+					Number.isFinite(mediaSeconds) &&
+						mediaSeconds >= 2.5 &&
+						mediaSeconds <= 86400
+				);
+				const verifyMedia = async (expected: {
+					audio: number;
+					video: number;
+				}) => {
+					await peer.locator("#webrtc-unlock-audio").click();
+					const observed = await peer.evaluate(async (seconds) => {
+						const state = (window as any).__rtcLifecycle;
+						const active = state.receivers.filter((item: any) =>
+							["recvonly", "sendrecv"].includes(
+								item.transceiver.currentDirection
+							)
+						);
+						const before = new Map<string, { bytes: number; units: number }>();
+						const content = new Map<any, Set<string>>();
+						let audioRms = 0;
+						const rows: any[] = [];
+						for (let sample = 0; sample < Math.ceil(seconds * 10); sample++) {
+							rows.length = 0;
+							for (const item of active) {
+								const report = await item.receiver.getStats();
+								report.forEach((stat: any) => {
+									if (stat.type !== "inbound-rtp") return;
+									const units =
+										item.track.kind === "video"
+											? stat.framesDecoded
+											: stat.packetsReceived;
+									if (!before.has(stat.id))
+										before.set(stat.id, {
+											bytes: stat.bytesReceived ?? 0,
+											units: units ?? 0,
+										});
+									const first = before.get(stat.id)!;
+									rows.push({
+										id: stat.id,
+										kind: item.track.kind,
+										bytesDelta: (stat.bytesReceived ?? 0) - first.bytes,
+										unitsDelta: (units ?? 0) - first.units,
+										jitterSeconds: stat.jitter ?? null,
+										packetsLost: stat.packetsLost ?? null,
+									});
+								});
+								if (item.video?.readyState >= 2) {
+									const painter = item.canvas.getContext("2d");
+									painter.drawImage(item.video, 0, 0, 8, 8);
+									const data = painter.getImageData(0, 0, 8, 8).data;
+									const colors = content.get(item) ?? new Set<string>();
+									colors.add(`${data[0]},${data[1]},${data[2]}`);
+									content.set(item, colors);
+								}
+								if (item.analyser) {
+									const values = new Float32Array(2048);
+									item.analyser.getFloatTimeDomainData(values);
+									audioRms = Math.max(
+										audioRms,
+										Math.sqrt(
+											values.reduce((sum, value) => sum + value * value, 0) /
+												values.length
+										)
+									);
+								}
+							}
+							await new Promise((resolve) => setTimeout(resolve, 100));
+						}
+						return {
+							rows,
+							audioRms,
+							audioState: state.audio?.state,
+							videoColorCounts: active
+								.filter((item: any) => item.video)
+								.map((item: any) => content.get(item)?.size ?? 0),
+						};
+					}, mediaSeconds);
+					assert.equal(
+						observed.rows.filter((row: any) => row.kind === "audio").length,
+						expected.audio
+					);
+					assert.equal(
+						observed.rows.filter((row: any) => row.kind === "video").length,
+						expected.video
+					);
+					for (const row of observed.rows) {
+						assert.ok(
+							row.bytesDelta > 0 && row.unitsDelta > 0,
+							`active track stalled: ${JSON.stringify(row)}`
+						);
+					}
+					assert.equal(observed.videoColorCounts.length, expected.video);
+					assert.ok(
+						observed.videoColorCounts.every((count: number) => count >= 3),
+						`received video must change: ${JSON.stringify(observed)}`
+					);
+					if (expected.audio)
+						assert.ok(
+							observed.audioRms > 0.01,
+							`received audio must contain signal: ${observed.audioRms}`
+						);
+					console.log(
+						"WebRTC per-track media:",
+						JSON.stringify({ expected, ...observed })
+					);
+				};
 				const localDescription = async (offer: boolean) => {
 					const pc = (window as any).__rtcLifecycle.pc as RTCPeerConnection;
 					await pc.setLocalDescription(
@@ -181,6 +340,7 @@ export default [
 						`initial DataChannel did not open: ${JSON.stringify(state)} (${String(error)})`
 					);
 				}
+				await verifyMedia({ audio: 1, video: 1 });
 				const blob = await frame.evaluate(async () => {
 					const state = (window as any).__rtcLifecycle;
 					const bytes = new Uint8Array(32768).map((_, index) => index % 251);
@@ -212,6 +372,7 @@ export default [
 					);
 				});
 				await negotiate();
+				await verifyMedia({ audio: 0, video: 1 });
 				await frame.evaluate(() => {
 					const state = (window as any).__rtcLifecycle;
 					const audio = state.audio.createMediaStreamDestination();
@@ -226,27 +387,7 @@ export default [
 					});
 				});
 				await negotiate();
-				await peer.waitForFunction(
-					async () => {
-						const report = await (window as any).__rtcLifecycle.pc.getStats();
-						let audio = 0,
-							video = 0;
-						report.forEach((stat: any) => {
-							if (stat.type === "inbound-rtp" && stat.kind === "audio")
-								audio += stat.totalSamplesReceived ?? 0;
-							if (stat.type === "inbound-rtp" && stat.kind === "video")
-								video += stat.framesDecoded ?? 0;
-						});
-						return (
-							audio > 1000 &&
-							video > 20 &&
-							(window as any).__rtcLifecycle.tracks.filter(
-								(kind: string) => kind === "video"
-							).length >= 2
-						);
-					},
-					{ timeout: 20000 }
-				);
+				await verifyMedia({ audio: 1, video: 2 });
 				await frame.evaluate(() => {
 					const state = (window as any).__rtcLifecycle;
 					state.channels.initial.close();

@@ -319,16 +319,12 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: packages/runway
 
-      - name: Start WebRTC integration dependencies
-        run: sh tests/webrtc/start-test-stack.sh
-
       - name: Run Runway tests
         env:
           TURN_CREDENTIALS_URL: http://127.0.0.1:18081/turn-credentials
           WEBRTC_FAKE_MEDIA: "1"
           WEBRTC_EXPOSE_HOST_CANDIDATES: "1"
-        run: OMIT_WPT=1 pnpm test --parallel 4
-        working-directory: packages/runway
+        run: OMIT_WPT=1 python3 tests/webrtc/run-browser-suite.py --browser chromium --filter "" --parallel 1 --output tests/webrtc/artifacts/regression
 
   rewritertests:
     name: Run Rewriter Tests

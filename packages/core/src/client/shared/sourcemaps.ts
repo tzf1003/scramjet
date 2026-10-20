@@ -1,4 +1,9 @@
 import {
+	NativeDataView,
+	NativeTextDecoder,
+	NativeUint8Array,
+} from "@/shared/snapshot";
+import {
 	Object_defineProperty,
 	Number_isSafeInteger,
 	Error,
@@ -41,9 +46,9 @@ function registerRewrites(
 	buf: Array<number>,
 	tag: string
 ) {
-	const sourcemap = Uint8Array.from(buf);
-	const view = new DataView(sourcemap.buffer);
-	const decoder = new TextDecoder("utf-8");
+	const sourcemap = NativeUint8Array.from(buf);
+	const view = new NativeDataView(sourcemap.buffer);
+	const decoder = new NativeTextDecoder("utf-8");
 
 	const rewrites: Rewrite[] = [];
 

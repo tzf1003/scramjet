@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { chromium } from "../../../packages/runway/node_modules/playwright/index.mjs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,6 +94,41 @@ try {
 		throw new Error(
 			"native browser established an unauthorized direct connection with isolation enabled"
 		);
+	let capture;
+	if (process.env.EVIDENCE_DIR) {
+		capture = spawn(
+			"ip",
+			[
+				"netns",
+				"exec",
+				ns,
+				"tcpdump",
+				"-U",
+				"-i",
+				"any",
+				"-nn",
+				"-w",
+				path.join(process.env.EVIDENCE_DIR, "negative-control.pcap"),
+			],
+			{ stdio: ["ignore", "ignore", "pipe"] }
+		);
+		await new Promise((resolve, reject) => {
+			const timer = setTimeout(
+				() => reject(new Error("negative control capture did not start")),
+				5000
+			);
+			capture.stderr.on("data", (chunk) => {
+				if (String(chunk).includes("listening on")) {
+					clearTimeout(timer);
+					resolve();
+				}
+			});
+			capture.once("exit", () => {
+				clearTimeout(timer);
+				reject(new Error("negative control capture exited"));
+			});
+		});
+	}
 	execFileSync("ip", [
 		"netns",
 		"exec",
@@ -107,12 +142,18 @@ try {
 	let detectable;
 	try {
 		detectable = await pair();
+		await new Promise((resolve) => setTimeout(resolve, 1200));
 	} finally {
 		execFileSync(
 			"ip",
 			["netns", "exec", ns, "python3", path.join(directory, "policy.py")],
 			{ stdio: "inherit" }
 		);
+		if (capture) {
+			const stopped = new Promise((resolve) => capture.once("exit", resolve));
+			capture.kill("SIGINT");
+			await stopped;
+		}
 	}
 	if (!detectable)
 		throw new Error(

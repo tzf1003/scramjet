@@ -18,7 +18,6 @@ import {
 	type ScramjetConfig,
 	type ScramjetContext,
 	type ScramjetInterface,
-	type TrackedHistoryState,
 	Plugin,
 } from "@mercuryworkshop/scramjet";
 import { CONTROLLERFRAME } from "./symbols";
@@ -211,7 +210,7 @@ type ControllerInit = {
 };
 
 type FrameOptions = {
-	plugins: ManagedPlugin[];
+	plugins?: ManagedPlugin[];
 };
 
 export class Controller {
@@ -388,7 +387,7 @@ export class Controller {
 					referrer: data.referrer,
 					body: data.body,
 					cache: data.cache,
-					clientId: data.clientId,
+					clientId: data.clientId ?? "",
 				});
 
 				return [

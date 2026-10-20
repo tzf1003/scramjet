@@ -1,3 +1,4 @@
+import { NativeHeaders } from "@/shared/snapshot";
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 
 export class ScramjetHeaders {
@@ -34,7 +35,7 @@ export class ScramjetHeaders {
 	}
 
 	toNativeHeaders(): Headers {
-		const native = new Headers();
+		const native = new NativeHeaders();
 		for (const k in this.headers) {
 			native.set(k, this.headers[k]);
 		}

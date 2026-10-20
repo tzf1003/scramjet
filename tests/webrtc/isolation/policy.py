@@ -50,7 +50,7 @@ def digest(name):
     return hashlib.sha256(json.dumps(stable(value), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def install():
+def specification():
     name = table_name()
     proxy = [address("SCRAMJET_HOST", True), address("SCRAMJET_HOST_V6")]
     turn = [address("TURN_HOST", True), address("TURN_HOST_V6")]
@@ -67,41 +67,65 @@ def install():
     low, high = port("TURN_RELAY_MIN", 50160), port("TURN_RELAY_MAX", 50200)
     if low > high:
         raise ValueError("TURN_RELAY_MIN must not exceed TURN_RELAY_MAX")
+    relay_access = os.environ.get("TURN_CLIENT_RELAY_RANGE", "0")
+    if relay_access not in ("0", "1"):
+        raise ValueError("TURN_CLIENT_RELAY_RANGE must be 0 or 1")
     loopback = os.environ.get("ALLOW_LOOPBACK", "0")
     if loopback not in ("0", "1"):
         raise ValueError("ALLOW_LOOPBACK must be 0 or 1")
     lines = []
-    if command("nft", "list", "table", "inet", name, check=False).returncode == 0:
-        lines.append("delete table inet " + name)
+    expected = []
     lines += ["table inet " + name + " {", "chain output {", "type filter hook output priority 0; policy drop;"]
+    def match(protocol, field, value):
+        return {"match": {"op": "==", "left": {"payload": {"protocol": protocol, "field": field}}, "right": value}}
+    def rule(expressions, comment=None):
+        value = {"family": "inet", "table": name, "chain": "output", "expr": expressions}
+        if comment: value["comment"] = comment
+        expected.append(value)
     if loopback == "1":
-        lines.append('oif "lo" counter accept comment "scramjet-webrtc-loopback"')
+        lines.append('oifname "lo" counter accept comment "scramjet-webrtc-loopback"')
+        rule([{"match": {"op": "==", "left": {"meta": {"key": "oifname"}}, "right": "lo"}}, {"counter": {}}, {"accept": None}], "scramjet-webrtc-loopback")
     # Permit neighbor discovery, not arbitrary IPv6 data or echo traffic.
-    lines.append('meta l4proto ipv6-icmp ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } accept')
+    lines.append('ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } accept')
+    rule([match("ip6", "hoplimit", 255), match("icmpv6", "type", {"set": ["nd-neighbor-solicit", "nd-neighbor-advert"]}), {"accept": None}])
     def allow(host, protocol, ports, label):
         if host is not None:
             family = "ip6" if host.version == 6 else "ip"
+            numbers = [int(item) for item in re.findall(r"\d+", ports)]
+            port_value = {"set": sorted(set(numbers))} if "{" in ports else {"range": numbers} if "-" in ports else numbers[0]
+            rule([match(family, "daddr", str(host)), match(protocol, "dport", port_value), {"counter": {}}, {"accept": None}], label)
             lines.append(f'{family} daddr {host} {protocol} dport {ports} counter accept comment "{label}"')
     for host in proxy:
         allow(host, "tcp", "{ " + ", ".join(map(str, sorted(set(proxy_ports)))) + " }", "scramjet-proxy")
     for host in turn:
         allow(host, "udp", str(turn_port), "turn-udp")
         allow(host, "tcp", f"{{ {turn_port}, {tls_port} }}", "turn-tcp-tls")
-        allow(host, "udp", f"{low}-{high}", "turn-relay-udp")
+        if relay_access == "1":
+            allow(host, "udp", f"{low}-{high}", "turn-relay-udp")
     for host in dns:
         for protocol in ("udp", "tcp"):
             allow(host, protocol, str(port("DNS_PORT", 53)), "dns-" + protocol)
     # Every packet remains destination-qualified, including established flows.
     lines += ['counter drop comment "scramjet-webrtc-default-deny"', "}", "}"]
+    rule([{"counter": {}}, {"drop": None}], "scramjet-webrtc-default-deny")
+    result = {"policyVersion": 3, "table": name, "policySha256": None,
+              "networkNamespace": os.readlink("/proc/self/ns/net"), "installed": True,
+              "proxyHosts": [str(host) for host in proxy if host is not None], "proxyTcpPorts": proxy_ports,
+              "turnHosts": [str(host) for host in turn if host is not None], "turnUdpPort": turn_port, "turnUdpPorts": [turn_port], "clientRelayRange": relay_access == "1",
+              "turnTcpPorts": [turn_port, tls_port], "relayPorts": [low, high],
+              "dnsHosts": [str(host) for host in dns if host is not None], "dnsPort": port("DNS_PORT", 53)}
+    return lines, expected, result
+
+
+def install():
+    lines, _, result = specification()
+    name = result["table"]
+    if command("nft", "list", "table", "inet", name, check=False).returncode == 0:
+        lines.insert(0, "delete table inet " + name)
     batch = "\n".join(lines) + "\n"
     command("nft", "--check", "--file", "-", data=batch)
     command("nft", "--file", "-", data=batch)
-    result = {"policyVersion": 2, "table": name, "policySha256": digest(name),
-              "networkNamespace": os.readlink("/proc/self/ns/net"), "installed": True,
-              "proxyHosts": [str(host) for host in proxy if host is not None], "proxyTcpPorts": proxy_ports,
-              "turnHosts": [str(host) for host in turn if host is not None], "turnUdpPort": turn_port,
-              "turnTcpPorts": [turn_port, tls_port], "relayPorts": [low, high],
-              "dnsHosts": [str(host) for host in dns if host is not None], "dnsPort": port("DNS_PORT", 53)}
+    result["policySha256"] = digest(name)
     print(json.dumps(result))
     directory = os.environ.get("EVIDENCE_DIR")
     if directory:

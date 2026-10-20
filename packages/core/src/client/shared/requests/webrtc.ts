@@ -34,6 +34,7 @@ type NativeMethods = {
 	getConfiguration: RTCPeerConnection["getConfiguration"];
 	getStats: RTCPeerConnection["getStats"];
 	close: RTCPeerConnection["close"];
+	restartIce: RTCPeerConnection["restartIce"];
 	connectionState: (this: RTCPeerConnection) => RTCPeerConnectionState;
 	iceConnectionState: (this: RTCPeerConnection) => RTCIceConnectionState;
 	localDescription: (this: RTCPeerConnection) => RTCSessionDescription | null;
@@ -66,6 +67,7 @@ function captureMethods(ctor: NativeRtcConstructor): NativeMethods {
 		getConfiguration: ctor.prototype.getConfiguration,
 		getStats: ctor.prototype.getStats,
 		close: ctor.prototype.close,
+		restartIce: ctor.prototype.restartIce,
 		connectionState: Object_getOwnPropertyDescriptor(
 			ctor.prototype,
 			"connectionState"
@@ -500,10 +502,37 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			}
 			try {
 				const current = Reflect_apply(state.methods.getConfiguration, pc, []);
+				const previous = current.iceServers ?? [];
+				let changed = previous.length !== credential.iceServers.length;
+				for (let index = 0; index < previous.length && !changed; index++) {
+					const next = credential.iceServers[index];
+					changed =
+						previous[index].username !== next.username ||
+						previous[index].credential !== next.credential;
+					const oldUrls =
+						typeof previous[index].urls === "string"
+							? [previous[index].urls]
+							: previous[index].urls;
+					const newUrls =
+						typeof next.urls === "string" ? [next.urls] : next.urls;
+					if (oldUrls.length !== newUrls.length) changed = true;
+					for (let item = 0; item < oldUrls.length && !changed; item++)
+						changed = oldUrls[item] !== newUrls[item];
+				}
 				Reflect_apply(state.methods.setConfiguration, pc, [
 					sanitizeRtcConfiguration(current, credential.iceServers),
 				]);
 				assertNativeConfiguration(pc);
+				// New TURN credentials take effect in the next ICE generation. Let
+				// the native negotiationneeded event ask the application to signal it.
+				const ice = Reflect_apply(state.methods.iceConnectionState, pc, []);
+				if (changed && (ice === "connected" || ice === "completed")) {
+					if (typeof state.methods.restartIce !== "function")
+						throw configurationError(
+							"credential rotation requires ICE restart support"
+						);
+					Reflect_apply(state.methods.restartIce, pc, []);
+				}
 			} catch (error) {
 				log(
 					"could not apply refreshed credentials to a live connection",

@@ -164,7 +164,7 @@ export default function (client: ScramjetClient, self: Self) {
 			const r = arr.splice(i, 1);
 			client.eventcallbacks.set(ctx.this, arr);
 
-			ctx.args[1] = r[0].proxiedCallback;
+			ctx.args[1] = r[0].proxiedCallback as EventListener;
 		},
 	});
 

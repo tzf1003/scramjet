@@ -110,7 +110,7 @@ export class ScramjetFetchHandler extends EventTarget {
 	public crossOriginIsolated: boolean = false;
 	public context: ScramjetContext;
 
-	public trackedClients = new _Map<string, ScramjetFetchTrackedClient>();
+	public trackedClients: _Map<string, ScramjetFetchTrackedClient> = new _Map();
 
 	public hooks: {
 		rewriter: {

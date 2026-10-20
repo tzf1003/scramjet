@@ -791,6 +791,8 @@ async function main() {
 				args.push(
 					"--use-fake-device-for-media-stream",
 					"--use-fake-ui-for-media-stream",
+					"--auto-select-desktop-capture-source=Entire screen",
+					"--disable-audio-output",
 					"--autoplay-policy=no-user-gesture-required"
 				);
 			}

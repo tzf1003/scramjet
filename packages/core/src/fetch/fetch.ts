@@ -1,3 +1,4 @@
+import { NativeURL } from "@/shared/snapshot";
 import {
 	BareRequestInit,
 	BareResponse,
@@ -98,7 +99,7 @@ export async function doHandleFetch(
 		let initiatorOriginUrl: URL | undefined;
 		if (parsed.fetchInitiatorOrigin) {
 			try {
-				initiatorOriginUrl = new URL(parsed.fetchInitiatorOrigin);
+				initiatorOriginUrl = new NativeURL(parsed.fetchInitiatorOrigin);
 			} catch {
 				initiatorOriginUrl = undefined;
 			}
@@ -106,11 +107,11 @@ export async function doHandleFetch(
 		if (!initiatorOriginUrl) {
 			const rawClient =
 				request.rawClientUrl ||
-				(request.rawReferrer ? new URL(request.rawReferrer) : undefined);
+				(request.rawReferrer ? new NativeURL(request.rawReferrer) : undefined);
 			initiatorOriginUrl =
 				rawClient &&
 				rawClient.pathname.startsWith(handler.context.prefix.pathname)
-					? new URL(unrewriteUrl(rawClient, handler.context))
+					? new NativeURL(unrewriteUrl(rawClient, handler.context))
 					: undefined;
 		}
 
@@ -275,7 +276,7 @@ async function handleBlobOrDataUrlFetch(
 		headers.set("Cross-Origin-Embedder-Policy", "require-corp");
 	}
 
-	if (parsed.isFakeDataURL) URL.revokeObjectURL(dataUrl);
+	if (parsed.isFakeDataURL) NativeURL.revokeObjectURL(dataUrl);
 
 	return {
 		body,

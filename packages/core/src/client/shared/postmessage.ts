@@ -26,7 +26,7 @@ export default function (client: ScramjetClient, self: Self) {
 					typeof ctx.this[POLLUTANT] === "object" &&
 					ctx.this[POLLUTANT] !== null
 				) {
-					pollutant = ctx.this[POLLUTANT]; // lastly try to use the object from $setrealm
+					pollutant = ctx.this[POLLUTANT] as object; // lastly try to use the object from $setrealm
 				} else {
 					pollutant = {}; // give up
 				}

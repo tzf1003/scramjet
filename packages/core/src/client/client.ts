@@ -54,10 +54,17 @@ type Traverse<
 	O extends Record<any, any>,
 	P extends string,
 > = P extends `${infer K}.${infer R}` ? Traverse<O[K], R> : O[P];
-type GlobalTraverse<P extends string> = Traverse<
-	GlobalThis & Record<string, any>,
-	P
->;
+type NativeOverloads = {
+	"window.postMessage": (
+		this: Window,
+		message: any,
+		targetOrigin?: string | WindowPostMessageOptions,
+		transfer?: Transferable[]
+	) => void;
+};
+type GlobalTraverse<P extends string> = P extends keyof NativeOverloads
+	? NativeOverloads[P]
+	: Traverse<GlobalThis & Record<string, any>, P>;
 type ProxyApplyThis<T extends string> =
 	unknown extends ThisParameterType<Extract<GlobalTraverse<T>, AnyFunction>>
 		? T extends `${infer ClassName}.prototype.${string}`
@@ -137,7 +144,9 @@ export type Proxy<T extends string = string> = {
 export type TrapCtx<T extends string> = {
 	this: any;
 	get: () => GlobalTraverse<T>;
-	set: (v: GlobalTraverse<T>) => void;
+	set: (
+		v: T extends "HTMLElement.prototype.style" ? string : GlobalTraverse<T>
+	) => void;
 };
 export type Trap<T extends string> = {
 	writable?: boolean;
@@ -145,7 +154,10 @@ export type Trap<T extends string> = {
 	enumerable?: boolean;
 	configurable?: boolean;
 	get?: (ctx: TrapCtx<T>) => GlobalTraverse<T>;
-	set?: (ctx: TrapCtx<T>, v: GlobalTraverse<T>) => void;
+	set?: (
+		ctx: TrapCtx<T>,
+		v: T extends "HTMLElement.prototype.style" ? string : GlobalTraverse<T>
+	) => void;
 };
 
 export type ScramjetModule = {
@@ -411,7 +423,7 @@ export class ScramjetClient {
 					// or we're cross-origin and frameElement doesn't exist. that's a TODO because this won't work
 					return null;
 				}
-				if (!frame.name) {
+				if (!(frame as HTMLIFrameElement).name) {
 					// the top frame is scramjet-controlled, but it has no name. this is user error
 					dbg.error(
 						"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
@@ -420,7 +432,7 @@ export class ScramjetClient {
 					return null;
 				}
 
-				return frame.name;
+				return (frame as HTMLIFrameElement).name;
 			},
 			get parentFrameName() {
 				if (!iswindow)
@@ -451,7 +463,7 @@ export class ScramjetClient {
 							return null;
 						}
 
-						if (!frame.name) {
+						if (!(frame as HTMLIFrameElement).name) {
 							// the parent frame is scramjet-controlled, but it has no name. this is user error
 							dbg.error(
 								"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
@@ -460,7 +472,7 @@ export class ScramjetClient {
 							return null;
 						}
 
-						return frame.name;
+						return (frame as HTMLIFrameElement).name;
 					} else {
 						// we're inside an iframe, and the parent is not scramjet-controlled
 						// return our own frame name
@@ -468,7 +480,7 @@ export class ScramjetClient {
 							"window.frameElement",
 							client.global
 						);
-						if (!frame.name) {
+						if (!(frame as HTMLIFrameElement).name) {
 							// the parent frame is not scramjet-controlled, so we can't get a parent frame name
 							dbg.error(
 								"YOU NEED TO USE `new ScramjetFrame()`! DIRECT IFRAMES WILL NOT WORK"
@@ -477,7 +489,7 @@ export class ScramjetClient {
 							return null;
 						}
 
-						return frame.name;
+						return (frame as HTMLIFrameElement).name;
 					}
 				} catch {
 					return null;

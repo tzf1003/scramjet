@@ -1,3 +1,11 @@
+import {
+	NativeArrayBuffer,
+	NativeBlob,
+	NativeObject,
+	NativePromise,
+	NativeReadableStream,
+	NativeWritableStream,
+} from "@/shared/snapshot";
 import { type BareCompatibleWebSocket } from "@mercuryworkshop/proxy-transports";
 import { ScramjetClient } from "@client/index";
 import {
@@ -11,7 +19,7 @@ type FakeWebSocketState = {
 	protocol: string;
 	extensions: string;
 	url: string;
-	binaryType: string;
+	binaryType: BinaryType;
 	barews: BareCompatibleWebSocket;
 
 	onopen: (ev: Event) => any | null;
@@ -31,13 +39,19 @@ type FakeWebSocketStreamState = {
 	writable: WritableStream;
 };
 export default function (client: ScramjetClient, self: GlobalThis) {
+	const {
+		CloseEvent: NativeCloseEvent,
+		Event: NativeEvent,
+		EventTarget: NativeEventTarget,
+		MessageEvent: NativeMessageEvent,
+	} = self;
 	const socketmap: WeakMap<WebSocket, FakeWebSocketState> =
 		new _WeakMap() as WeakMap<WebSocket, FakeWebSocketState>;
 	const socketstreammap: WeakMap<WebSocketStream, FakeWebSocketStreamState> =
 		new _WeakMap() as WeakMap<WebSocketStream, FakeWebSocketStreamState>;
 	client.Proxy("WebSocket", {
 		construct(ctx) {
-			const fakeWebSocket = new EventTarget() as WebSocket;
+			const fakeWebSocket = new NativeEventTarget() as WebSocket;
 			Object_setPrototypeOf(fakeWebSocket, ctx.fn.prototype);
 			fakeWebSocket.constructor = ctx.fn;
 
@@ -88,42 +102,42 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			}
 
 			barews.addEventListener("open", () => {
-				fakeEventSend(new Event("open"));
+				fakeEventSend(new NativeEvent("open"));
 			});
 			barews.addEventListener("close", (ev) => {
-				fakeEventSend(new CloseEvent("close", ev));
+				fakeEventSend(new NativeCloseEvent("close", ev));
 			});
-			barews.addEventListener("message", async (ev) => {
+			barews.addEventListener("message", async (ev: MessageEvent) => {
 				let payload = ev.data;
 				if (typeof payload === "string") {
 					// DO NOTHING
 				} else if ("byteLength" in payload) {
 					// arraybuffer, convert to blob if needed or set the proper prototype
 					if (state.binaryType === "blob") {
-						payload = new Blob([payload]);
+						payload = new NativeBlob([payload]);
 					} else {
-						Object_setPrototypeOf(payload, ArrayBuffer.prototype);
+						Object_setPrototypeOf(payload, NativeArrayBuffer.prototype);
 					}
 				} else if ("arrayBuffer" in payload) {
 					// blob, convert to arraybuffer if neccesary.
 					if (state.binaryType === "arraybuffer") {
 						payload = await payload.arrayBuffer();
-						Object_setPrototypeOf(payload, ArrayBuffer.prototype);
+						Object_setPrototypeOf(payload, NativeArrayBuffer.prototype);
 					}
 				}
 
-				const fakeev = new MessageEvent("message", {
+				const fakeev = new NativeMessageEvent("message", {
 					data: payload,
 					origin: ev.origin,
 					lastEventId: ev.lastEventId,
 					source: ev.source,
-					ports: ev.ports,
+					ports: [...ev.ports],
 				});
 
 				fakeEventSend(fakeev);
 			});
 			barews.addEventListener("error", () => {
-				fakeEventSend(new Event("error"));
+				fakeEventSend(new NativeEvent("error"));
 			});
 
 			socketmap.set(fakeWebSocket, state);
@@ -137,7 +151,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 
 			return ws.binaryType;
 		},
-		set(ctx, v: string) {
+		set(ctx, v: BinaryType) {
 			const ws = socketmap.get(ctx.this);
 			if (!ws) return ctx.set(v);
 			if (v === "blob" || v === "arraybuffer") ws.binaryType = v;
@@ -254,7 +268,16 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 			const ws = socketmap.get(ctx.this);
 			if (!ws) return;
 
-			ctx.return(ws.barews.send(ctx.args[0]));
+			const data = ctx.args[0];
+			const payload = self.ArrayBuffer.isView(data)
+				? (new self.Uint8Array(
+						data.buffer,
+						data.byteOffset,
+						data.byteLength
+					).slice().buffer as ArrayBuffer)
+				: data;
+			void ws.barews.send(payload as string | ArrayBuffer | Blob);
+			ctx.return(undefined);
 		},
 	});
 
@@ -271,24 +294,25 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 
 	client.Proxy("WebSocketStream", {
 		construct(ctx) {
-			const fakeWebSocket = {};
+			const fakeWebSocket = {} as WebSocketStream;
 			Object_setPrototypeOf(fakeWebSocket, ctx.fn.prototype);
 			fakeWebSocket.constructor = ctx.fn;
 
-			const barews = client.bare.createWebSocket(ctx.args[0], ctx.args[1], [
+			const url = new _URL(ctx.args[0], client.url.href).href;
+			const barews = client.bare.createWebSocket(url, ctx.args[1]?.protocols, [
 				["User-Agent", self.navigator.userAgent],
 				["Origin", client.url.origin],
 			]);
-			ctx.args[1]?.signal.addEventListener("abort", () => {
+			ctx.args[1]?.signal?.addEventListener("abort", () => {
 				barews.close(1000, "");
 			});
 			const state: FakeWebSocketStreamState = {
 				protocol: "",
 				extensions: "",
-				url: ctx.args[0],
+				url,
 				barews,
 
-				opened: new Promise((resolve, reject) => {
+				opened: new NativePromise((resolve, reject) => {
 					barews.addEventListener("open", () => {
 						resolve({
 							readable: state.readable,
@@ -301,12 +325,12 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 						reject(ev);
 					});
 				}),
-				closed: new Promise((resolve) => {
+				closed: new NativePromise((resolve) => {
 					barews.addEventListener("close", (ev: CloseEvent) => {
 						resolve({ closeCode: ev.code, reason: ev.reason });
 					});
 				}),
-				readable: new ReadableStream({
+				readable: new NativeReadableStream({
 					start(controller) {
 						barews.addEventListener("message", async (ev: MessageEvent) => {
 							let payload = ev.data;
@@ -316,11 +340,17 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 								// DO NOTHING
 							} else if ("byteLength" in payload) {
 								// arraybuffer, set the realms prototype so its recognized
-								Object.setPrototypeOf(payload, ArrayBuffer.prototype);
+								NativeObject.setPrototypeOf(
+									payload,
+									NativeArrayBuffer.prototype
+								);
 							} else if ("arrayBuffer" in payload) {
 								// blob, convert to arraybuffer
 								payload = await payload.arrayBuffer();
-								Object.setPrototypeOf(payload, ArrayBuffer.prototype);
+								NativeObject.setPrototypeOf(
+									payload,
+									NativeArrayBuffer.prototype
+								);
 							}
 							controller.enqueue(payload);
 						});
@@ -329,15 +359,15 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 						barews.close(info?.closeCode ?? 1000, info?.reason ?? "");
 					},
 				}),
-				writable: new WritableStream({
+				writable: new NativeWritableStream({
 					write(chunk) {
 						barews.send(chunk);
 					},
 					abort() {
 						barews.close(1000, "");
 					},
-					close(info) {
-						barews.close(info?.closeCode ?? 1000, info?.reason ?? "");
+					close() {
+						barews.close(1000, "");
 					},
 				}),
 			};

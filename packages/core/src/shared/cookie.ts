@@ -1,3 +1,10 @@
+import {
+	NativeDate,
+	NativeMap,
+	NativeNumber,
+	NativeObject,
+	Nativeconsole,
+} from "@/shared/snapshot";
 // thnank you node unblocker guy
 import { JSON_parse, JSON_stringify } from "@/shared/snapshot";
 import { _Date } from "./snapshot";
@@ -19,7 +26,7 @@ export type Cookie = {
 export class CookieJar {
 	private cookies: Record<string, Cookie> = {};
 	// Index by domain (without leading dot)
-	private byDomain: Map<string, Cookie[]> = new Map();
+	private byDomain: Map<string, Cookie[]> = new NativeMap();
 
 	private defaultPath(url: URL): string {
 		const pathname = url.pathname;
@@ -77,7 +84,9 @@ export class CookieJar {
 
 			const hostOnly = !parsedCookie.domain;
 			const expiresTime = parsedCookie.expires?.getTime();
-			const expires = Number.isFinite(expiresTime) ? expiresTime : undefined;
+			const expires = NativeNumber.isFinite(expiresTime)
+				? expiresTime
+				: undefined;
 			const cookie: Cookie = {
 				...parsedCookie,
 				hostOnly,
@@ -94,7 +103,7 @@ export class CookieJar {
 			const id = `${cookie.domain}@${cookie.path}@${cookie.name}`;
 
 			if (typeof cookie.maxAge === "number") {
-				if (!Number.isFinite(cookie.maxAge)) {
+				if (!NativeNumber.isFinite(cookie.maxAge)) {
 					delete cookie.maxAge;
 				} else if (cookie.maxAge <= 0) {
 					this.removeById(id);
@@ -169,19 +178,19 @@ export class CookieJar {
 
 	load(cookies: string | Record<string, Cookie>) {
 		if (typeof cookies === "object") {
-			console.error("??");
+			Nativeconsole.error("??");
 			return;
 		}
 		const parsed: Record<string, Cookie> = JSON_parse(cookies);
 		this.cookies = {};
 		this.byDomain.clear();
-		const ids = Object.keys(parsed);
+		const ids = NativeObject.keys(parsed);
 		for (let i = 0; i < ids.length; i++) {
 			const id = ids[i];
 			const c = parsed[id];
 			if (typeof c.expires === "string") {
-				const t = Date.parse(c.expires as unknown as string);
-				c.expires = Number.isFinite(t) ? t : undefined;
+				const t = NativeDate.parse(c.expires as unknown as string);
+				c.expires = NativeNumber.isFinite(t) ? t : undefined;
 			}
 			this.cookies[id] = c;
 			this.indexCookie(c);

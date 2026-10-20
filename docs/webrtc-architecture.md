@@ -1,6 +1,7 @@
 # Scramjet WebRTC Architecture
 
-Status: implementation design for the WebRTC takeover work in this fork.
+Status: implemented in this fork; executed results and platform limits are recorded
+in `webrtc-test-report.md`.
 
 ## 1. Scope and non-goals
 
@@ -31,8 +32,8 @@ Consequences:
      hook to replace its native ICE UDP socket with a JavaScript transport. Doing
      so requires patching the browser network service or shipping a full
      libwebrtc/WASM stack (ICE + DTLS + SRTP + SCTP).
-   - Therefore `relay`/`enforced` modes use real TURN, not Wisp, and this document
-     does not call TURN "Wisp full tunnel".
+   - Therefore `relay`/`enforced` modes use real TURN for native WebRTC.
+     Wisp remains the separate HTTP/WebSocket transport.
 3. Media capture is a local device capability. Forcing a relay changes the network
    path, not where `getUserMedia`/`getDisplayMedia` capture happens.
 
@@ -178,7 +179,8 @@ TURN credentials are short-lived HMAC credentials (coturn REST API):
   page constructs a PeerConnection before credentials exist, `failClosed` throws a
   `NotSupportedError` instead of allowing direct ICE.
 - Refreshes are scheduled at `ttl * credentialRefreshRatio`. Refreshed credentials are applied to live connections with native `setConfiguration`;
-  ICE restart or renegotiation picks them up for new allocations. Application
+  changed credentials request native ICE restart on connected peers. The site
+  handles `negotiationneeded` and exchanges fresh descriptions. Configuration
   failure closes fail-closed connections; expiry also closes them when refresh
   cannot recover. Expired credentials never cause a direct-ICE fallback.
 
@@ -242,3 +244,18 @@ reported as unverified, not passed.
 | Non-relay selected pair                           | Connection closed and error logged                                         |
 | `enforced` without attestation                    | PeerConnection constructor throws `NotSupportedError`                      |
 | Credential endpoint fetch fails                   | Retry with backoff; new connections fail closed until resolved             |
+
+## Credential and network recovery
+
+Refreshed TURN credentials are applied with the captured native setConfiguration
+method. A changed credential or URL on a connected peer requests native ICE
+restart and `negotiationneeded`; the site remains responsible for signaling.
+Expired credentials and unverifiable candidate pairs close under fail-closed
+policy. API events and media encoding remain native.
+
+The Linux reference separates the runner/servers from the browser namespace.
+Its installer and verifier share an endpoint specification. A trusted outer
+supervisor injects TURN and network faults and records results; the page receives
+no Docker or firewall controls. Applications restore signaling transports using
+`Controller.setTransport` after a tunnel outage, then rebuild failed native peers.
+The automated suite exercises that reference recovery sequence.

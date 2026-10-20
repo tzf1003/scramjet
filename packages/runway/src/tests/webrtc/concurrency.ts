@@ -12,7 +12,8 @@ import {
 
 const PAIRS = Number(process.env.WEBRTC_CONCURRENCY_PAIRS ?? 2);
 const config: WebrtcTestConfig = {
-	mode: "relay",
+	mode: process.env.WEBRTC_TEST_MODE === "enforced" ? "enforced" : "relay",
+	networkIsolationVerified: process.env.WEBRTC_TEST_MODE === "enforced",
 	iceServers: [],
 	failClosed: true,
 	diagnostics: true,

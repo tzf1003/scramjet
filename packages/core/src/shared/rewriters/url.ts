@@ -1,8 +1,14 @@
+import {
+	CapturedGlobal,
+	NativeBlob,
+	NativeUint8Array,
+} from "@/shared/snapshot";
 import { ScramjetContext } from "@/shared";
 import { rewriteJs } from "@rewriters/js";
 import { QP } from "@/fetch/parse";
 
 import {
+	_Uint8Array,
 	TextEncoder_encode,
 	_URL,
 	_URLSearchParams,
@@ -95,7 +101,7 @@ function dataToBlob(url: string) {
 		let base64 = data.replace(/\s/g, "");
 		base64 = base64.replace(/-/g, "+").replace(/_/g, "/");
 		const binString = atob(base64);
-		bytes = new Uint8Array(binString.length);
+		bytes = new NativeUint8Array(binString.length);
 		for (let i = 0; i < binString.length; i++) {
 			bytes[i] = binString.charCodeAt(i);
 		}
@@ -109,7 +115,9 @@ function dataToBlob(url: string) {
 		bytes = TextEncoder_encode(decoded);
 	}
 
-	const blob = new Blob([bytes], { type });
+	const blob = new NativeBlob([_Uint8Array.from(bytes).buffer], {
+		type,
+	});
 	const objectUrl = URL_createObjectURL(blob);
 	return { blob, objectUrl };
 }
@@ -160,7 +168,7 @@ export function rewriteUrl(
 		let base = meta.base.href;
 
 		if (String_startsWith(base, "about:"))
-			base = unrewriteUrl(self.location.href, context); // jank!!!!! weird jank!!!
+			base = unrewriteUrl(CapturedGlobal.location.href, context); // jank!!!!! weird jank!!!
 		const realUrl = tryCanParseURL(url, base);
 		if (!realUrl) return url;
 

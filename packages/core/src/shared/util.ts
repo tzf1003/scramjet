@@ -1,3 +1,4 @@
+import { NativeUint8Array } from "@/shared/snapshot";
 import {
 	Array_from,
 	btoa,
@@ -15,7 +16,7 @@ function bytesToBase64Fallback(bytes: Uint8Array): string {
 }
 
 const bytesToBase64Native: ((this: Uint8Array) => string) | undefined = (
-	Uint8Array.prototype as any
+	NativeUint8Array.prototype as any
 ).toBase64;
 
 export const bytesToBase64: (bytes: Uint8Array) => string =

@@ -91,30 +91,8 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: packages/runway
 
-      - name: Start coturn + credential service
-        run: |
-          sh tests/webrtc/start-test-stack.sh
-          HOST_IP=$(hostname -I | awk '{print $1}')
-          echo "TURN_ALLOWED_PEER_IP=172.29.0.10,172.29.0.1,172.17.0.1,127.0.0.1,${HOST_IP}" >> tests/webrtc/.env
-          ALLOW_ANONYMOUS_TEST_ONLY=1 CREDENTIAL_RATE_LIMIT=1000 docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env up -d --force-recreate coturn
-          mkdir -p tests/webrtc/artifacts
-          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env logs coturn > tests/webrtc/artifacts/coturn.log
-
-      - name: Hook tests
-        env:
-          TURN_CREDENTIALS_URL: http://127.0.0.1:18081/turn-credentials
-          RUNWAY_BROWSER: chromium
-        working-directory: packages/runway
-        run: pnpm test webrtc-hook --parallel 1
-
-      - name: Real relay DataChannel, media, concurrency
-        env:
-          TURN_CREDENTIALS_URL: http://127.0.0.1:18081/turn-credentials
-          RUNWAY_BROWSER: chromium
-          WEBRTC_FAKE_MEDIA: "1"
-          WEBRTC_EXPOSE_HOST_CANDIDATES: "1"
-        working-directory: packages/runway
-        run: pnpm test webrtc-relay --parallel 1
+      - name: Chromium WebRTC suite and real TURN faults
+        run: python3 tests/webrtc/run-browser-suite.py --browser chromium --output tests/webrtc/artifacts/chromium
 
       - name: TURN transport matrix (UDP/TCP/TLS)
         run: |
@@ -170,15 +148,8 @@ jobs:
       - name: Install Playwright ${{ matrix.browser }}
         run: npx playwright install --with-deps ${{ matrix.browser }}
         working-directory: packages/runway
-      - name: Start coturn + credentials
-        run: sh tests/webrtc/start-test-stack.sh
-      - name: Run browser suite
-        env:
-          RUNWAY_BROWSER: ${{ matrix.browser }}
-          WEBRTC_EXPOSE_HOST_CANDIDATES: "1"
-          TURN_CREDENTIALS_URL: http://127.0.0.1:18081/turn-credentials
-        working-directory: packages/runway
-        run: pnpm test webrtc- --parallel 1
+      - name: Run browser suite and real TURN faults
+        run: python3 tests/webrtc/run-browser-suite.py --browser ${{ matrix.browser }} --output tests/webrtc/artifacts/${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -212,58 +183,16 @@ jobs:
           pnpm --dir packages/core run rewriter:build
           pnpm exec rspack build --mode production
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-        working-directory: packages/runway
-
-      - name: Start coturn + credential service for the client namespace
+      - name: Prepare Linux verification image
         run: |
-          sh tests/webrtc/start-test-stack.sh
-          sed -i 's|^TURN_EXTERNAL_IP=.*|TURN_EXTERNAL_IP=10.200.0.1/172.29.0.10|' tests/webrtc/.env
-          sed -i 's|^TURN_ALLOWED_PEER_IP=.*|TURN_ALLOWED_PEER_IP=172.29.0.10,10.200.0.1,10.200.0.2|' tests/webrtc/.env
-          sed -i 's|^TURN_URLS=.*|TURN_URLS=turn:10.200.0.1:13478?transport=udp,turn:10.200.0.1:13478?transport=tcp|' tests/webrtc/.env
-          ALLOW_ANONYMOUS_TEST_ONLY=1 CREDENTIAL_RATE_LIMIT=1000 docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env up -d --force-recreate
-          curl -fsS http://127.0.0.1:18081/healthz
+          sh tests/webrtc/coturn/generate-certs.sh
+          docker build -f tests/webrtc/isolation/Dockerfile -t scramjet-webrtc-linux-verification:local .
 
-      - name: Run browser inside the isolated namespace
-        env:
-          TURN_CREDENTIALS_URL: http://10.200.0.1:18081/turn-credentials
-          RUNWAY_BROWSER: chromium
-          RUNWAY_CHROMIUM_ARGS: "--no-sandbox"
-          WEBRTC_TEST_MODE: enforced
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nftables iproute2 iptables tcpdump python3
-          CHROMIUM_EXECUTABLE=$(pnpm --dir packages/runway exec node --input-type=module -e 'import {chromium} from "playwright"; console.log(chromium.executablePath())')
-          sudo env PATH="$PATH" \
-            TURN_HOST=10.200.0.1 TURN_PORT=13478 \
-            SCRAMJET_HOST=10.200.0.1 SCRAMJET_PORT=4500 \
-            MASQUERADE=1 \
-            SCRAMJET_EXTRA_TCP_PORTS=18081,18083 \
-            PLAYWRIGHT_CHROMIUM_EXECUTABLE="$CHROMIUM_EXECUTABLE" \
-            WEBRTC_TEST_MODE=enforced \
-            EVIDENCE_DIR="$PWD/tests/webrtc/artifacts" \
-            tests/webrtc/isolation/run-in-netns.sh -- \
-            env TURN_CREDENTIALS_URL="$TURN_CREDENTIALS_URL" \
-              PLAYWRIGHT_BROWSERS_PATH="$HOME/.cache/ms-playwright" \
-              pnpm --dir packages/runway test webrtc-relay-datachannel --parallel 1
+      - name: IPv4 enforced browser suite and packet controls
+        run: python3 tests/webrtc/isolation/run-linux-suite.py --output tests/webrtc/artifacts/ipv4
 
-      - name: Analyze client egress
-        if: always()
-        run: |
-          docker run --rm --network none \
-            -v "$PWD/tests/webrtc/artifacts:/evidence" \
-            -v "$PWD/tests/webrtc/capture:/scripts:ro" \
-            nicolaka/netshoot python3 /scripts/check-client-egress.py \
-            /evidence/client.pcap --policy /evidence/policy.json \
-            --receipt /evidence/isolation.json \
-            --output /evidence/client-egress.json
-
-      - name: Collect isolation evidence
-        if: always()
-        run: |
-          mkdir -p tests/webrtc/artifacts
-          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env logs > tests/webrtc/artifacts/docker.log 2>&1 || true
+      - name: IPv6 enforced browser suite and packet controls
+        run: python3 tests/webrtc/isolation/run-linux-suite.py --ipv6 --output tests/webrtc/artifacts/ipv6
 
       - uses: actions/upload-artifact@v4
         if: always()
