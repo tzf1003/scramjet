@@ -75,8 +75,9 @@ Serve `tests/webrtc/server/credential-server.mjs` with Node 22+:
 
 ```sh
 TURN_STATIC_AUTH_SECRET=... \
+CREDENTIAL_SESSION_SECRET=... \
 TURN_URLS='turns:turn.example.com:5349?transport=tcp,turn:turn.example.com:3478?transport=udp' \
-TURN_TTL=3600 PORT=8081 \
+TURN_TTL=120 PORT=8081 \
 node tests/webrtc/server/credential-server.mjs
 ```
 
@@ -95,6 +96,35 @@ the proxied URL namespace. The service returns:
 
 The HMAC secret stays in the service/coturn environment. Do not put it in the
 browser config, the repository, or logs.
+
+The endpoint requires an authenticated session by default. The application backend
+calls the exported `signCredentialSession(userId, sessionSecret, expirySeconds)`
+after its own login succeeds, and sets the returned token in the same-origin
+`__Host-scramjet-turn-session` cookie with `HttpOnly; Secure; SameSite=Strict; Path=/`.
+The Controller and injected client use `credentials: "same-origin"`; this cookie
+stays outside the proxied page's virtual cookie jar. Backend integrations can use
+the same signed token as a Bearer credential. Keep `CREDENTIAL_SESSION_SECRET`
+separate from the TURN secret.
+
+`CREDENTIAL_RATE_LIMIT` defaults to 30 issuances per minute per source address and
+per authenticated user. The service rejects malformed paths, expired sessions,
+and inaccessible/invalid revocation state. For multiple service replicas, enforce
+an aggregate limit at the authenticated reverse proxy as well.
+
+Set `CREDENTIAL_REVOKED_USERS_FILE` to a server-side JSON array of revoked user IDs;
+replace the file atomically. Revocation stops new issuance immediately. Existing
+TURN bearer credentials remain usable until their TTL; 120 seconds is the default.
+Immediate termination of every existing allocation requires restarting Coturn
+after replacing the TURN secret. Stop issuance during that operation, replace the
+shared secret in both services, recreate Coturn, then resume issuance. This also
+terminates active calls; applications should reconnect and renegotiate using fresh
+credentials. `TURN_STATIC_AUTH_SECRET_FILE` lets the credential service reread a
+protected secret file on each issuance. The Coturn process reads its configured
+secret at startup. Restart the credential service when rotating the session key.
+
+`start-test-stack.sh` explicitly enables `ALLOW_ANONYMOUS_TEST_ONLY=1` for its local
+or CI fixtures. Direct Compose deployments default to authenticated mode. Use the
+authenticated configuration above for deployed services.
 
 ## 4. Enable relay mode in Scramjet
 
@@ -148,17 +178,29 @@ boundary is the kernel:
 
 1. Run the browser in a dedicated network namespace (or container) with only the
    Scramjet origin and TURN endpoints reachable.
-2. Install the policy inside that namespace:
+2. Start the host-side Runway services and supervise Chromium through the launcher:
 
    ```sh
-   sudo env SCRAMJET_HOST=10.200.0.1 SCRAMJET_PORT=4500 \
+    CHROMIUM_EXECUTABLE=$(pnpm --dir packages/runway exec node --input-type=module \
+      -e 'import {chromium} from "playwright"; console.log(chromium.executablePath())')
+    sudo env PATH="$PATH" SCRAMJET_HOST=10.200.0.1 SCRAMJET_PORT=4500 \
      TURN_HOST=10.200.0.1 TURN_PORT=13478 \
-     UNAUTHORIZED_UDP_TARGET=1.1.1.1:19302 \
-     tests/webrtc/isolation/run-in-netns.sh -- <browser/test command>
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE="$CHROMIUM_EXECUTABLE" \
+      TURN_CREDENTIALS_URL=http://10.200.0.1:18081/turn-credentials \
+      EVIDENCE_DIR="$PWD/tests/webrtc/artifacts/enforced" \
+      tests/webrtc/isolation/run-in-netns.sh -- \
+      pnpm --dir packages/runway test webrtc-relay-datachannel --parallel 1
    ```
 
    `run-in-netns.sh` creates `10.200.0.2` (client) and `10.200.0.1` (host),
-   installs nftables, runs `verify-isolation.sh`, then executes the command.
+   installs nftables atomically, runs IPv4/IPv6 and DNS probes, and executes the
+   test command on the host. Only Chromium is launched inside the namespace.
+   The host runs the Harness, Wisp, target and signaling services. Explicit
+   permitted service ports default to 4500, 4501, 18081 and 18083. Broad ephemeral
+   port allowances and unrestricted established-flow allowances are not used.
+   The launcher performs a real native-browser direct-connect negative control,
+   captures client packets and stops the run if its attested rule digest changes.
+   Root, Python 3, iproute2, nftables and tcpdump are required.
 
 3. Configure coturn's external address for that namespace:
    `TURN_EXTERNAL_IP=10.200.0.1/<container-ip>`, and include the client's peer
@@ -169,6 +211,22 @@ boundary is the kernel:
 `relay` mode remains available for browsers that cannot be placed behind this
 boundary, with this explicit limit: JavaScript hooks cannot stop an unpatched
 browser or an uninjected realm from using direct UDP.
+
+The launcher uses `10.200.0.2` and `fd42:736a:1::2` for the client, and the
+corresponding `.1`/`::1` addresses for host services. Set `TURN_HOST_V6` and provide
+IPv6 TURN URLs to test an IPv6-reachable Coturn. `MASQUERADE=1` enables task-scoped
+IPv4 forwarding/NAT (and IPv6 when `TURN_HOST_V6` is set), restoring the previous
+forwarding state at cleanup. Use this only in an owned test runner/container.
+Configure explicit `DNS_HOST`/`DNS_HOST_V6` resolver addresses when hostname
+resolution is required; other DNS egress remains blocked. The JavaScript flag is
+a deployment attestation, not a browser API that can inspect kernel rules.
+
+For an existing isolated deployment, `setup-nftables.sh` can install the same
+policy directly. Its transaction validates addresses, ports and identifiers and
+preserves the previous policy on failure. `verify-isolation.sh` creates temporary
+destination-specific counters immediately before the final deny rule, so traffic
+allowed by an earlier rule cannot borrow unrelated drops to pass verification.
+Do not run that mutating verifier concurrently with the launcher's policy monitor.
 
 ### Chromium policy
 

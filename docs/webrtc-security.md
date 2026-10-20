@@ -61,8 +61,9 @@ For a client namespace, the only permitted WebRTC-related flows are:
 
 All other UDP, including STUN to arbitrary servers and direct ICE to peer host
 candidates, is dropped and counted. TCP egress other than the Scramjet origin and
-TURN ports is dropped. IPv6 is handled by a separate `inet6` table with the same
-policy; an IPv6-only direct path is therefore not an escape hatch.
+TURN ports is dropped. IPv4 and IPv6 share an `inet` table with explicit `ip`/`ip6` destination
+allowlists and a default-drop policy. IPv6 neighbor discovery is limited to
+link-local protocol messages with hop limit 255.
 
 DNS is resolved through the configured resolver only (or hosts entries are used).
 If TURN URLs use hostnames, the resolver is explicitly allowed; otherwise the
@@ -72,14 +73,15 @@ deployment uses IP literals.
 
 - `use-auth-secret` with HMAC-SHA1 time-limited credentials; no static user
   database for clients.
-- Secret only in the server environment, never in the repository or client config.
+- Secrets only in server environment variables or protected files; separate
+  session and TURN secrets, with bounded TTL revocation and documented rotation.
 - Relay port range restricted; `no-cli`; quotas/limits configured.
 - Default `denied-peer-ip` ranges: loopback, private IPv4/IPv6, link-local,
   multicast, cloud metadata addresses. Tests that need a local peer use an explicit
   `allowed-peer-ip` entry; production should relay only to public peers.
 - TLS certificate/key are mounted at runtime and never committed.
-- The credential endpoint validates method/parameters, issues short TTLs and never
-  logs the secret.
+- The credential endpoint validates exact routes, authenticated signed sessions,
+  revoked-user state and issuance rates, then issues short TTLs without logging secrets.
 
 ## 5. Fail-closed rules
 

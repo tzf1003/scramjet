@@ -1,0 +1,14 @@
+table inet scramjet_webrtc {
+	chain output {
+		type filter hook output priority filter; policy drop;
+		ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } accept
+		ip daddr 10.200.0.1 tcp dport { 4500, 4501, 18081, 18083 } counter packets 0 bytes 0 accept comment "scramjet-proxy"
+		ip daddr 192.168.215.5 udp dport 13478 counter packets 0 bytes 0 accept comment "turn-udp"
+		ip daddr 192.168.215.5 tcp dport { 13478, 15349 } counter packets 0 bytes 0 accept comment "turn-tcp-tls"
+		ip daddr 192.168.215.5 udp dport 50160-50200 counter packets 0 bytes 0 accept comment "turn-relay-udp"
+		ip6 daddr fd42:736a:231::3 udp dport 13478 counter packets 0 bytes 0 accept comment "turn-udp"
+		ip6 daddr fd42:736a:231::3 tcp dport { 13478, 15349 } counter packets 0 bytes 0 accept comment "turn-tcp-tls"
+		ip6 daddr fd42:736a:231::3 udp dport 50160-50200 counter packets 0 bytes 0 accept comment "turn-relay-udp"
+		counter packets 0 bytes 0 drop comment "scramjet-webrtc-default-deny"
+	}
+}

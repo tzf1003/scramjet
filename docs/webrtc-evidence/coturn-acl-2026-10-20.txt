@@ -1,0 +1,18 @@
+Coturn private peer ACL check
+=============================
+
+Environment: coturn/coturn:4.18.0-r0@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3.
+The TURN URL and short-lived REST credential were obtained from the local
+credential service; the credential value is not reproduced here.
+
+Command (inside the coturn container):
+  turnutils_uclient -u <short-lived-user> -w <redacted> \
+    -p 13478 -n 1 -m 1 -e 192.168.1.1 -r 3480 172.29.0.10
+
+Observed:
+  channel bind: error 403 ()
+  ERROR A peer IP 192.168.1.1 denied in the range: 192.168.0.0-192.168.255.255
+
+Interpretation: the configured private-range denylist rejects a relayed peer
+covered by the 192.168.0.0/16 rule. The test stack explicitly allowlists only its
+own peer addresses; production leaves TURN_ALLOWED_PEER_IP empty.

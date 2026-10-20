@@ -96,10 +96,10 @@ interface ScramjetWebrtcConfig {
 }
 ```
 
-| Mode       | API behaviour                                                                                                                                                   | Network boundary                                                | Intended use                          |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
-| `off`      | No hook installed                                                                                                                                               | None                                                            | Default; unchanged Scramjet behaviour |
-| `relay`    | Force `iceTransportPolicy: "relay"`, replace all ICE servers with the authorised TURN set, reject non-relay local candidates/pairs                              | TURN only as far as the browser obeys; **not** an OS boundary   | Web-only deployments, development     |
+| Mode       | API behaviour                                                                                                                                                       | Network boundary                                                | Intended use                          |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------- |
+| `off`      | No hook installed                                                                                                                                                   | None                                                            | Default; unchanged Scramjet behaviour |
+| `relay`    | Force `iceTransportPolicy: "relay"`, replace all ICE servers with the authorised TURN set, reject non-relay local candidates/pairs                                  | TURN only as far as the browser obeys; **not** an OS boundary   | Web-only deployments, development     |
 | `enforced` | Same as `relay`, plus refuses to operate unless `networkIsolationVerified` is attested, and closes any connection whose selected local candidate is not TURN-backed | TURN only **and** OS/browser policy must block all other egress | Controlled Linux browser/container    |
 
 `relay` is honest about its limit: a malicious page cannot re-enable direct ICE
@@ -156,9 +156,11 @@ Defence in depth, not SDP rewriting:
   connection is closed and the promise rejects. SDP is never edited to hide a leak.
 - ICE candidate events are inspected; a non-relay local candidate closes the
   connection.
-- On connected/completed, native `getStats()` is polled a few times. The selected
+- On connected/completed and periodically while active, captured native `getStats()`
+  verifies every selected transport. Unsupported, rejected, missing or timed-out
+  statistics close a fail-closed connection after bounded retries. Each selected
   candidate pair's **local** candidate must be TURN-backed: `candidateType:
-  "relay"`, or `candidateType: "prflx"` with a `url` of `turn:`/`turns:` and a
+"relay"`, or `candidateType: "prflx"` with a `url` of `turn:`/`turns:` and a
   `relayProtocol`. Browsers can report a relayed transport as prflx; accepting it
   only with the TURN URL preserves fail-closed behaviour. Anything else closes the
   connection in relay/enforced mode.
@@ -175,10 +177,10 @@ TURN credentials are short-lived HMAC credentials (coturn REST API):
 - Fallback path: the client hook fetches `credentialEndpoint` at hook init. If a
   page constructs a PeerConnection before credentials exist, `failClosed` throws a
   `NotSupportedError` instead of allowing direct ICE.
-- Refreshes are scheduled at `ttl * credentialRefreshRatio`. Refreshed credentials
-  are applied to live connections with native `setConfiguration`; ICE restart or
-  renegotiation picks them up for new allocations. Expired credentials never cause
-  a direct-ICE fallback.
+- Refreshes are scheduled at `ttl * credentialRefreshRatio`. Refreshed credentials are applied to live connections with native `setConfiguration`;
+  ICE restart or renegotiation picks them up for new allocations. Application
+  failure closes fail-closed connections; expiry also closes them when refresh
+  cannot recover. Expired credentials never cause a direct-ICE fallback.
 
 The shared secret exists only in the coturn/credential service environment. The
 client receives username/credential/ttl only.

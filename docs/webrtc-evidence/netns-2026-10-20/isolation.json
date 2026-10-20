@@ -1,0 +1,56 @@
+{
+  "policyVersion": 2,
+  "table": "scramjet_webrtc",
+  "policySha256": "7de246d58fbb1c16efe7301d03800b0fad157743eb5f7df57811ff8a9f061efc",
+  "networkNamespace": "net:[4026532715]",
+  "verifiedAt": 1792500611.2734294,
+  "runId": "9399d0a7725946bfb824f2a162f8a5af",
+  "probes": [
+    {
+      "protocol": "tcp",
+      "family": 4,
+      "host": "10.200.0.1",
+      "port": 18084,
+      "deniedBefore": 0,
+      "deniedAfter": 1,
+      "blocked": true
+    },
+    {
+      "protocol": "udp",
+      "family": 4,
+      "host": "10.200.0.1",
+      "port": 18084,
+      "deniedBefore": 0,
+      "deniedAfter": 1,
+      "blocked": true
+    },
+    {
+      "protocol": "tcp",
+      "family": 6,
+      "host": "fd42:736a:1::1",
+      "port": 18084,
+      "deniedBefore": 0,
+      "deniedAfter": 1,
+      "blocked": true
+    },
+    {
+      "protocol": "udp",
+      "family": 6,
+      "host": "fd42:736a:1::1",
+      "port": 18084,
+      "deniedBefore": 0,
+      "deniedAfter": 1,
+      "blocked": true
+    },
+    {
+      "protocol": "udp",
+      "family": 4,
+      "host": "10.200.0.1",
+      "port": 53,
+      "deniedBefore": 0,
+      "deniedAfter": 1,
+      "blocked": true
+    }
+  ],
+  "ok": true
+}

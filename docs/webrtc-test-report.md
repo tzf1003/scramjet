@@ -60,7 +60,7 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers \
   src/index.ts webrtc- --parallel 1
 ```
 
-### Chromium — PASS 15/15
+### Chromium — PASS 21/21
 
 - relay/concurrency: two concurrent PeerConnections, ordered + unordered
   (`maxRetransmits: 0`) + negotiated DataChannels, 64 KiB payload, backpressure
@@ -77,6 +77,13 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers \
 - `about:blank` and `srcdoc` realms
 - worker realm (Chromium exposes only `RTCDataChannel` in dedicated workers; the
   test verifies the realm is intact and would enforce WebRTC if present)
+- protected policy under prototype poisoning (Array/WeakMap/Set/Function.call)
+- WebKit alias + WebIDL dictionaries (`null`, `undefined`, no arg, function)
+- credential refresh uses the captured native `Response.json`
+- real established connection closes when `getStats` verification fails
+- media/track lifecycle: Blob hash, replaceTrack, removeTrack, addTrack,
+  addTransceiver, renegotiation, DataChannel close/recreate, partial reliability,
+  and ten application RTT samples
 - real TURN DataChannel: text, 4 KiB binary, 128 KiB text all round-tripped;
   SHA-256 matched; ICE restart kept the channel open; selected local candidate is
   TURN-backed
@@ -85,7 +92,7 @@ PLAYWRIGHT_BROWSERS_PATH=/tmp/pw-browsers \
   > 100 kB, selected pair TURN-backed. Peer B runs in a separate page so media
   > capture cannot starve its evaluation.
 
-### Firefox — PASS 13/13
+### Firefox — PASS 18/18
 
 All Chromium tests except media and worker-realm (browser filter):
 
@@ -94,9 +101,9 @@ All Chromium tests except media and worker-realm (browser filter):
 
 Firefox media capture with Playwright fake devices is **UNVERIFIED**.
 
-### WebKit (Playwright) — PASS 13/13
+### WebKit (Playwright) — PASS 18/18
 
-Same 13 tests as Firefox. On WebKit the selected candidate-pair report can lack
+Same 18 tests as Firefox. On WebKit the selected candidate-pair report can lack
 `transport.selectedCandidatePairId`; the runner falls back to the nominated
 succeeded `candidate-pair`. This is a stats-reading fallback, not a policy
 relaxation.
@@ -130,50 +137,45 @@ Result: **PASS** (Chromium, real TURN DataChannel + ICE restart). The hook
 requires `networkIsolationVerified=true`, forces relay, and accepts only
 TURN-backed selected pairs.
 
-This proves the client-side runtime gate. It is **not** proof of kernel network
-isolation; that is covered separately below.
+This proves the client-side runtime gate. In addition, the supervised Linux
+namespace run in section 7 executed the same real DataChannel + ICE Restart test
+with `WEBRTC_TEST_MODE=enforced`.
 
 ## 7. Network isolation (Linux nftables)
 
-Environment: two Linux containers on an isolated Docker network. The client
-container has `NET_ADMIN`/`NET_RAW`. It is a real Linux network namespace; the
-scripts are the same ones intended for `ip netns`/CI.
+Two independent layers were exercised:
 
-Commands (abridged):
+1. **Fault injection** in a disposable Linux network namespace
+   (`tests/webrtc/isolation/regression.py`): atomic rule replacement, invalid
+   update preserving the old policy, and destination-specific verification.
+   Result: `atomicReload=true`, `tcpFalsePositiveRejected=true`,
+   `udpFalsePositiveRejected=true`, `ok=true`.
+2. **Real browser in a supervised dual-stack namespace** via
+   `tests/webrtc/isolation/run-in-netns.sh`. Harness/Wisp/coturn/credentials stay
+   on the host; only Chromium is launched inside the namespace.
 
-```sh
-docker compose -f tests/webrtc/isolation/docker-compose.yml up -d
-# inside client:
-SCRAMJET_HOST=<server-ip> SCRAMJET_PORT=8080 \
-  TURN_HOST=<server-ip> TURN_PORT=80 TURN_TLS_PORT=443 \
-  sh /repo/tests/webrtc/isolation/setup-nftables.sh
-TURN_HOST=<server-ip> TURN_PORT=80 \
-  UNAUTHORIZED_UDP_TARGET=1.1.1.1:19302 \
-  sh /repo/tests/webrtc/isolation/verify-isolation.sh
-```
+Observed from the real run:
 
-Observed:
+- IPv4 TCP/UDP, IPv6 TCP/UDP and unsigned DNS probes each incremented their own
+  drop counter and were blocked.
+- Native direct WebRTC between the isolated browser and an outside browser failed
+  while the policy was active: `nativeDirectBlocked=true`.
+- Deleting the policy made the same direct connection succeed:
+  `removedIsolationDirectDetected=true`.
+- Runway's real TURN DataChannel + ICE Restart test passed under
+  `WEBRTC_TEST_MODE=enforced`.
+- The client capture contained 592 IPv6 TURN packets and **0 unauthorised
+  packets**; policy/receipt/run hashes correlate.
+- Rule reload is a single validated nftables transaction. The verifier inserts a
+  destination-specific counter immediately before the final deny rule, so an
+  earlier accidental allow cannot borrow unrelated drop counts.
 
-- Before rules: `1.1.1.1:443` reachable (negative control).
-- After rules: `1.1.1.1:443` blocked (connection timed out).
-- Default-deny counter: `0 -> 3` after the unauthorised UDP/TCP probes.
-- Authorised TURN TCP port `<server-ip>:80`: reachable.
-- Verifier output: `{"table":"scramjet_webrtc","deniedBefore":0,"deniedAfter":3,
-"turnHost":"192.168.97.3","turnPort":80,"ok":true}`.
-- Evidence: `docs/webrtc-evidence/isolation.json`,
-  `docs/webrtc-evidence/nftables.txt`.
+Evidence: `docs/webrtc-evidence/netns-2026-10-20/` (`policy.json`,
+`isolation.json`, `browser-direct-control.json`, `client-egress.json`,
+`nftables.txt`). Raw PCAP remains outside git.
 
-### Browser inside a network namespace
-
-The full browser-in-`ip netns` run is Linux-only. This macOS environment has no
-passwordless root and cannot run `ip netns`, so it is **UNVERIFIED locally**. The
-reproducible commands and a CI job are provided
-(`tests/webrtc/isolation/run-in-netns.sh`, `.github/workflows/webrtc.yml`). The
-job fails if the verifier fails; it is not skipped.
-
-The container-level verifier above proves the ruleset itself drops unauthorised
-egress and permits the TURN port. It does not prove a specific browser emits no
-packets on other interfaces; that is what the Linux CI netns job adds.
+The CI enforced job uses the same launcher with task-scoped `MASQUERADE=1`; it
+fails if verification, the negative control, or the browser run fails.
 
 ## 8. Packet capture
 
@@ -191,7 +193,7 @@ Observed (tshark):
 | ---------------------------------- | ----- |
 | total packets                      | 1483  |
 | STUN binding requests              | 32    |
-| STUN Allocate requests             | 34    |
+| STUN Allocate requests             | 16    |
 | STUN Allocate successes (`0x0103`) | 8     |
 | STUN CreatePermission requests     | 21    |
 | STUN ChannelBind requests          | 2     |
@@ -223,14 +225,14 @@ No SDP is rewritten to hide a leak.
 
 ## 10. Browser / platform matrix
 
-| Platform                         | Hook + config                       | DataChannel via TURN | ICE restart        | Media               |
-| -------------------------------- | ----------------------------------- | -------------------- | ------------------ | ------------------- |
-| Chromium 149 (Playwright, macOS) | PASS                                | PASS (UDP/TCP/TLS)   | PASS               | PASS (fake devices) |
-| Firefox (Playwright, macOS)      | PASS                                | PASS (UDP/TCP)       | PASS               | UNVERIFIED          |
-| WebKit 26.5 (Playwright, macOS)  | PASS                                | PASS (UDP/TCP)       | PASS               | UNVERIFIED          |
-| Linux Chromium in netns          | UNVERIFIED locally; CI job provided | UNVERIFIED locally   | UNVERIFIED locally | UNVERIFIED locally  |
-| Android Chrome                   | UNVERIFIED                          | UNVERIFIED           | UNVERIFIED         | UNVERIFIED          |
-| iOS Safari                       | UNVERIFIED                          | UNVERIFIED           | UNVERIFIED         | UNVERIFIED          |
+| Platform                         | Hook + config   | DataChannel via TURN | ICE restart | Media            |
+| -------------------------------- | --------------- | -------------------- | ----------- | ---------------- |
+| Chromium 149 (Playwright, macOS) | PASS            | PASS (UDP/TCP/TLS)   | PASS        | PASS (synthetic) |
+| Firefox (Playwright, macOS)      | PASS            | PASS (UDP/TCP)       | PASS        | UNVERIFIED       |
+| WebKit 26.5 (Playwright, macOS)  | PASS            | PASS (UDP/TCP)       | PASS        | UNVERIFIED       |
+| Linux Chromium in netns          | PASS (enforced) | PASS (real TURN)     | PASS        | Synthetic tracks |
+| Android Chrome                   | UNVERIFIED      | UNVERIFIED           | UNVERIFIED  | UNVERIFIED       |
+| iOS Safari                       | UNVERIFIED      | UNVERIFIED           | UNVERIFIED  | UNVERIFIED       |
 
 No mobile result is inferred from desktop Playwright.
 
@@ -251,21 +253,17 @@ Scramjet sanity suite otherwise: 61 passed, 4 failed (3 above + 1 already in
 
 ## 12. Known gaps
 
-1. Full browser-in-netns execution was not possible on this macOS host; Linux CI
-   instructions/scripts are supplied.
-2. TURN/TLS with a self-signed certificate is only verified in Chromium
+1. TURN/TLS with a self-signed certificate is only verified in Chromium
    (test-only certificate override). Real certificate deployment is documented
    but not executed here.
-3. Firefox/WebKit media with synthetic devices is unverified.
-4. Worker WebRTC: Chromium has no `RTCPeerConnection` in dedicated workers; the
+2. Firefox/WebKit media with synthetic devices is unverified.
+3. Worker WebRTC: Chromium has no `RTCPeerConnection` in dedicated workers; the
    test verifies the injected realm and would enforce if the API exists. Firefox
    worker WebRTC is not tested.
-5. Multiple top-level tabs are represented by concurrent PeerConnections and
+4. Multiple top-level tabs are represented by concurrent PeerConnections and
    separate realms; no separate browser-tab test was executed.
-6. IPv6 bypass is blocked by the `inet` table policy but an IPv6-capable client
-   namespace was not available locally. The Linux CI job should enable IPv6 and
-   run `verify-isolation.sh`; otherwise treat IPv6 as **UNVERIFIED**.
-7. Performance, latency, throughput, CPU/memory and long-duration soak tests
-   were not benchmarked. No performance numbers are claimed.
-8. Separate top-level tabs were not exercised; concurrent PeerConnections and
+5. Performance, throughput, CPU/memory and long-duration soak tests were not
+   benchmarked. The lifecycle test records ten application RTT samples
+   (mean 0.9–5.6 ms in local runs) but this is not a performance acceptance run.
+6. Separate top-level tabs were not exercised; concurrent PeerConnections and
    realms are covered by the concurrency suite.
