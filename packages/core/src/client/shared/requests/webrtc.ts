@@ -9,8 +9,21 @@ import {
 	type ScramjetWebrtcConfig,
 	type WebrtcIceServer,
 } from "@/shared/webrtc";
-import { _URL } from "@/shared/snapshot";
+import {
+	_URL,
+	Array_isArray,
+	Date_now,
+	Error,
+	JSON_stringify,
+	Math_max,
+	Math_min,
+	Object_assign,
+	Object_getPrototypeOf,
+	Promise_resolve,
+	String,
+} from "@/shared/snapshot";
 
+// eslint-disable-next-line scramjet-core/no-globals -- type-only reference
 type NativeRtcConstructor = typeof RTCPeerConnection;
 type TimerHandle = ReturnType<typeof setTimeout>;
 
@@ -89,7 +102,6 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	const NativeWeakSet = self.WeakSet;
 	const NativeSet = self.Set;
 	const NativeDOMException = self.DOMException;
-	const getPrototypeOf = Object.getPrototypeOf;
 	const nativeSetTimeout = self.setTimeout.bind(self);
 	const nativeClearTimeout = self.clearTimeout.bind(self);
 
@@ -106,7 +118,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	const active = new NativeSet<RTCPeerConnection>();
 	const methodsFor = (pc: RTCPeerConnection): NativeMethods =>
 		states.get(pc)?.methods ??
-		methodsByPrototype.get(getPrototypeOf(pc)) ??
+		methodsByPrototype.get(Object_getPrototypeOf(pc)) ??
 		fallbackMethods;
 
 	const credential: CredentialState = {
@@ -137,12 +149,12 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	const credentialsUsable = () =>
 		credential.iceServers.length > 0 &&
 		(credential.expiresAt === null ||
-			credential.expiresAt > Date.now() + 1_000);
+			credential.expiresAt > Date_now() + 1_000);
 
 	const iceServerUrls = (servers: readonly WebrtcIceServer[]) => {
 		const urls = new NativeSet<string>();
 		for (const server of servers) {
-			for (const url of Array.isArray(server.urls)
+			for (const url of Array_isArray(server.urls)
 				? server.urls
 				: [server.urls]) {
 				urls.add(url);
@@ -225,7 +237,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 					/^turns?:/i.test(pair.localUrl) &&
 					pair.localRelayProtocol !== null);
 			if (!turnBacked) {
-				log(`selected pair rejected ${JSON.stringify(pair)}`);
+				log(`selected pair rejected ${JSON_stringify(pair)}`);
 				closeUnsafe(
 					pc,
 					`selected local candidate is ${String(
@@ -234,7 +246,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				);
 				return;
 			}
-			log(`selected pair verified ${JSON.stringify(pair)}`);
+			log(`selected pair verified ${JSON_stringify(pair)}`);
 		};
 
 		void check();
@@ -283,7 +295,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	};
 
 	function refreshCredentials(): Promise<void> {
-		if (!config.credentialEndpoint) return Promise.resolve();
+		if (!config.credentialEndpoint) return Promise_resolve();
 		if (credential.refreshInFlight) return credential.refreshInFlight;
 
 		const url = new _URL(config.credentialEndpoint, client.context.prefix.href)
@@ -305,7 +317,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				}
 				const parsed = parseWebrtcCredentialPayload(
 					await response.json(),
-					Date.now()
+					Date_now()
 				);
 				credential.iceServers = parsed.iceServers;
 				credential.expiresAt = parsed.expiresAt;
@@ -319,7 +331,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 					expiresAt: parsed.expiresAt,
 				});
 			} catch (error) {
-				credential.retryMs = Math.min(RETRY_MAX_MS, credential.retryMs * 2);
+				credential.retryMs = Math_min(RETRY_MAX_MS, credential.retryMs * 2);
 				nativeClearTimeout(credential.refreshTimer);
 				credential.refreshTimer = nativeSetTimeout(() => {
 					void refreshCredentials().catch(() => {});
@@ -337,11 +349,11 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		nativeClearTimeout(credential.refreshTimer);
 		credential.refreshTimer = null;
 		if (!config.credentialEndpoint) return;
-		const now = Date.now();
+		const now = Date_now();
 		const delay =
 			credential.expiresAt === null
 				? 0
-				: Math.max(
+				: Math_max(
 						0,
 						(credential.expiresAt - now) * config.credentialRefreshRatio
 					);
@@ -351,7 +363,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 					log("scheduled credential refresh failed", error)
 				);
 			},
-			Math.min(delay, 2_147_483_647)
+			Math_min(delay, 2_147_483_647)
 		);
 	}
 
@@ -442,7 +454,7 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				if (input !== null && typeof input === "object") {
 					const current = methodsFor(pc).getConfiguration.call(pc);
 					ctx.args[0] = sanitizeRtcConfiguration(
-						Object.assign({}, current, input),
+						Object_assign({}, current, input),
 						credential.iceServers
 					);
 				}

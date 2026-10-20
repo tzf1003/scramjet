@@ -11,6 +11,7 @@ export const String_startsWith = Function_prototype_call.bind(
 export const Number = globalThis.Number;
 export const Number_parseInt = globalThis.Number.parseInt;
 export const Number_isSafeInteger = globalThis.Number.isSafeInteger;
+export const Number_isFinite = globalThis.Number.isFinite;
 
 export const Object_keys = globalThis.Object.keys;
 export const Object_values = globalThis.Object.values;
@@ -26,6 +27,8 @@ export const Object_getOwnPropertySymbols =
 export const Object_defineProperty = globalThis.Object.defineProperty;
 export const Object_defineProperties = globalThis.Object.defineProperties;
 export const Object_setPrototypeOf = globalThis.Object.setPrototypeOf;
+export const Object_getPrototypeOf = globalThis.Object.getPrototypeOf;
+export const Object_assign = globalThis.Object.assign;
 
 export const Reflect_get = globalThis.Reflect.get;
 export const Reflect_set = globalThis.Reflect.set;
@@ -60,8 +63,11 @@ export const URL_revokeObjectURL = globalThis.URL.revokeObjectURL.bind(
 );
 
 export const Error = globalThis.Error;
+export const TypeError = globalThis.TypeError;
+export const Date_now = globalThis.Date.now;
 export const Math_random = globalThis.Math.random;
 export const Math_min = globalThis.Math.min;
+export const Math_max = globalThis.Math.max;
 
 export const Promise_all = globalThis.Promise.all.bind(globalThis.Promise);
 export const Promise_race = globalThis.Promise.race.bind(globalThis.Promise);

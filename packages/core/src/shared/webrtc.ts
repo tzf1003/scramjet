@@ -1,3 +1,14 @@
+// Capture the few runtime globals used below at module load. The client module is
+// executed before page scripts, so this is the same tamper-resistance boundary
+// as shared/snapshot.ts without adding a runtime import to the pure helper.
+const Array_isArray = globalThis.Array.isArray;
+const Number_isFinite = globalThis.Number.isFinite;
+const Math_min = globalThis.Math.min;
+const Math_max = globalThis.Math.max;
+const Object_values = globalThis.Object.values;
+const String = globalThis.String;
+const TypeError = globalThis.TypeError;
+
 /**
  * WebRTC policy helpers shared by the controller (credential prefetch) and the
  * client hook. This file must stay free of browser-only side effects so it can be
@@ -55,7 +66,7 @@ export function cloneIceServers(
 	servers: readonly WebrtcIceServer[]
 ): WebrtcIceServer[] {
 	return servers.map((server) => ({
-		urls: Array.isArray(server.urls) ? [...server.urls] : server.urls,
+		urls: Array_isArray(server.urls) ? [...server.urls] : server.urls,
 		...(server.username !== undefined ? { username: server.username } : {}),
 		...(server.credential !== undefined
 			? { credential: server.credential }
@@ -72,7 +83,7 @@ function validateIceServer(server: unknown, index: number): WebrtcIceServer {
 	const urls =
 		typeof rawUrls === "string"
 			? [rawUrls]
-			: Array.isArray(rawUrls)
+			: Array_isArray(rawUrls)
 				? rawUrls
 				: null;
 	if (
@@ -113,7 +124,7 @@ export function normalizeWebrtcConfig(
 	if (input == null) {
 		return { ...defaultWebrtcConfig, iceServers: [] };
 	}
-	if (typeof input !== "object" || Array.isArray(input)) {
+	if (typeof input !== "object" || Array_isArray(input)) {
 		throw new TypeError("webrtc must be an object");
 	}
 
@@ -127,7 +138,7 @@ export function normalizeWebrtcConfig(
 	}
 
 	const rawServers = input.iceServers ?? [];
-	if (!Array.isArray(rawServers)) {
+	if (!Array_isArray(rawServers)) {
 		throw new TypeError("webrtc.iceServers must be an array");
 	}
 	const iceServers = rawServers.map(validateIceServer);
@@ -146,15 +157,15 @@ export function normalizeWebrtcConfig(
 
 	const ratio = input.credentialRefreshRatio;
 	const credentialRefreshRatio =
-		typeof ratio === "number" && Number.isFinite(ratio)
-			? Math.min(0.95, Math.max(0.1, ratio))
+		typeof ratio === "number" && Number_isFinite(ratio)
+			? Math_min(0.95, Math_max(0.1, ratio))
 			: defaultWebrtcConfig.credentialRefreshRatio;
 
 	const rawExpiresAt = input.iceServersExpiresAt ?? null;
 	if (
 		rawExpiresAt !== null &&
 		(typeof rawExpiresAt !== "number" ||
-			!Number.isFinite(rawExpiresAt) ||
+			!Number_isFinite(rawExpiresAt) ||
 			rawExpiresAt <= 0)
 	) {
 		throw new TypeError("webrtc.iceServersExpiresAt must be epoch ms or null");
@@ -258,18 +269,18 @@ export function parseWebrtcCredentialPayload(
 	payload: unknown,
 	now: number
 ): ParsedWebrtcCredentials {
-	if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+	if (!payload || typeof payload !== "object" || Array_isArray(payload)) {
 		throw new TypeError("WebRTC credential response must be an object");
 	}
 	const data = payload as WebRtcCredentialPayload;
 	const ttl = data.ttl;
-	if (typeof ttl !== "number" || !Number.isFinite(ttl) || ttl <= 0) {
+	if (typeof ttl !== "number" || !Number_isFinite(ttl) || ttl <= 0) {
 		throw new TypeError("WebRTC credential response needs a positive ttl");
 	}
 
 	let iceServers: WebrtcIceServer[];
 	if (data.iceServers !== undefined) {
-		if (!Array.isArray(data.iceServers)) {
+		if (!Array_isArray(data.iceServers)) {
 			throw new TypeError("WebRTC credential iceServers must be an array");
 		}
 		iceServers = data.iceServers.map((server, index) =>
@@ -343,7 +354,7 @@ export function evaluateSelectedCandidatePair(
 	});
 
 	let selectedPairId: string | null = null;
-	for (const stat of Object.values(stats)) {
+	for (const stat of Object_values(stats)) {
 		if (
 			stat.type === "transport" &&
 			typeof stat.selectedCandidatePairId === "string"
@@ -357,7 +368,7 @@ export function evaluateSelectedCandidatePair(
 	if (selectedPairId && stats[selectedPairId]?.type === "candidate-pair") {
 		pair = stats[selectedPairId];
 	} else {
-		for (const stat of Object.values(stats)) {
+		for (const stat of Object_values(stats)) {
 			if (stat.type !== "candidate-pair") continue;
 			if (stat.selected === true) {
 				pair = stat;
@@ -396,7 +407,7 @@ export function evaluateSelectedCandidatePair(
 	const asString = (value: unknown): string | null =>
 		typeof value === "string" ? value : null;
 	const asNumber = (value: unknown): number | null =>
-		typeof value === "number" && Number.isFinite(value) ? value : null;
+		typeof value === "number" && Number_isFinite(value) ? value : null;
 
 	return {
 		localType: asType(local?.candidateType),
