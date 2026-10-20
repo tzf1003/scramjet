@@ -239,9 +239,6 @@ const test = webrtcTest({
 						(await digest(bytes)) === binaryDigest;
 				}
 				if (received.text && received.binary && received.big && !restarting) {
-					for (let attempt = 0; attempt < 80 && !baselineLocal; attempt += 1) {
-						await tick(250);
-					}
 					restarting = true;
 					awaitingRestart = true;
 					pc.restartIce();
