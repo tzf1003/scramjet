@@ -88,9 +88,9 @@ the proxied URL namespace. The service returns:
 ```json
 {
 	"urls": ["turn:turn.example.com:3478?transport=udp"],
-	"username": "1700003600:opaque-id",
+	"username": "1700000000:opaque-id",
 	"credential": "<base64-hmac>",
-	"ttl": 3600
+	"ttl": 120
 }
 ```
 

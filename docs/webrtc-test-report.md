@@ -39,7 +39,7 @@ Observed:
 
 - coturn listeners: 13478/UDP, 13478/TCP, 15349/TCP; relay range 50160-50200/UDP.
 - credential service `/turn-credentials` returns TURN URLs, HMAC username,
-  credential and `ttl=3600`.
+  credential and `ttl=120` (the test-stack default).
 - HMAC verified independently with the server-side secret: **matches**.
 - `turnutils_uclient` + `turnutils_peer` through coturn with those credentials:
   `tot_send_msgs=6, tot_recv_msgs=6`, `Total lost packets 0 (0.000000%)`.

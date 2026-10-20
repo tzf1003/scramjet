@@ -37,9 +37,17 @@ cleanup() {
  ip netns pids "$NETNS" | xargs -r kill 2>/dev/null
  ip netns del "$NETNS" 2>/dev/null
  ip link del "$HOST_IF" 2>/dev/null
- if [ "$NAT_ADDED" = 1 ]; then iptables -t nat -D POSTROUTING -s "$NS_IP/32" -j MASQUERADE; fi
- if [ "$NAT6_ADDED" = 1 ]; then ip6tables -t nat -D POSTROUTING -s "$NS_IPV6/128" -j MASQUERADE; fi
- if [ -n "$FORWARD_BEFORE" ]; then printf '%s\n' "$FORWARD_BEFORE" >/proc/sys/net/ipv4/ip_forward; fi
+ if [ "$NAT_ADDED" = 1 ]; then
+  iptables -t nat -D POSTROUTING -s "$NS_IP/32" -j MASQUERADE
+  iptables -D FORWARD -s "$NS_IP/32" -j ACCEPT
+  iptables -D FORWARD -d "$NS_IP/32" -j ACCEPT
+ fi
+ if [ "$NAT6_ADDED" = 1 ]; then
+  ip6tables -t nat -D POSTROUTING -s "$NS_IPV6/128" -j MASQUERADE
+  ip6tables -D FORWARD -s "$NS_IPV6/128" -j ACCEPT
+  ip6tables -D FORWARD -d "$NS_IPV6/128" -j ACCEPT
+ fi
+  if [ -n "$FORWARD_BEFORE" ]; then printf '%s\n' "$FORWARD_BEFORE" >/proc/sys/net/ipv4/ip_forward; fi
  if [ -n "$FORWARD6_BEFORE" ]; then printf '%s\n' "$FORWARD6_BEFORE" >/proc/sys/net/ipv6/conf/all/forwarding; fi
  rm -rf "$STAGING"
 }
@@ -60,12 +68,18 @@ if [ "${MASQUERADE:-0}" = 1 ]; then
  FORWARD_BEFORE=$(cat /proc/sys/net/ipv4/ip_forward)
  printf '1\n' >/proc/sys/net/ipv4/ip_forward
  iptables -t nat -A POSTROUTING -s "$NS_IP/32" -j MASQUERADE
+ iptables -I FORWARD -s "$NS_IP/32" -j ACCEPT
+ iptables -I FORWARD -d "$NS_IP/32" -j ACCEPT
  NAT_ADDED=1
+
  if [ -n "${TURN_HOST_V6:-}" ]; then
   FORWARD6_BEFORE=$(cat /proc/sys/net/ipv6/conf/all/forwarding)
   printf '1\n' >/proc/sys/net/ipv6/conf/all/forwarding
   ip6tables -t nat -A POSTROUTING -s "$NS_IPV6/128" -j MASQUERADE
+  ip6tables -I FORWARD -s "$NS_IPV6/128" -j ACCEPT
+  ip6tables -I FORWARD -d "$NS_IPV6/128" -j ACCEPT
   NAT6_ADDED=1
+
  fi
 fi
 # A browser process tree can only enter this namespace through this root-owned wrapper.
