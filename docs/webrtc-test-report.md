@@ -265,3 +265,7 @@ Scramjet sanity suite otherwise: 61 passed, 4 failed (3 above + 1 already in
 6. IPv6 bypass is blocked by the `inet` table policy but an IPv6-capable client
    namespace was not available locally. The Linux CI job should enable IPv6 and
    run `verify-isolation.sh`; otherwise treat IPv6 as **UNVERIFIED**.
+7. Performance, latency, throughput, CPU/memory and long-duration soak tests
+   were not benchmarked. No performance numbers are claimed.
+8. Separate top-level tabs were not exercised; concurrent PeerConnections and
+   realms are covered by the concurrency suite.
