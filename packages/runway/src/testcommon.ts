@@ -470,7 +470,7 @@ export function multiFrameTest(props: {
 	const createServer = (originid: string) => {
 		const js: Record<string, string> = {};
 		const subframes: Record<string, string[]> = {};
-		const port = nextPort++;
+		let port = nextPort++;
 
 		const server = http.createServer((req, res) => {
 			if (req.url === "/") {
@@ -517,18 +517,38 @@ export function multiFrameTest(props: {
 			}
 		});
 
+		const state: Server = {
+			server,
+			subframes,
+			get port() {
+				return port;
+			},
+			js,
+		} as Server;
+
 		serversOpenPromise.push(
-			new Promise((resolve) => {
-				server.listen(port, () => resolve());
+			new Promise((resolve, reject) => {
+				const listen = (attempt: number) => {
+					const onError = (error: NodeJS.ErrnoException) => {
+						server.off("error", onError);
+						if (error.code === "EADDRINUSE" && attempt < 20) {
+							port = nextPort++;
+							listen(attempt + 1);
+						} else {
+							reject(error);
+						}
+					};
+					server.once("error", onError);
+					server.listen(port, () => {
+						server.off("error", onError);
+						resolve();
+					});
+				};
+				listen(0);
 			})
 		);
 
-		return {
-			server,
-			subframes,
-			port,
-			js,
-		};
+		return state;
 	};
 
 	const walk = (frame: Frame) => {
