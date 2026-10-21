@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { webrtcPageHtml, webrtcTest } from "./helpers.ts";
+import { fetchTurnCredentials } from "./fixtures.ts";
 
 const TURN = "turn:127.0.0.1:13478?transport=udp";
 const ATTACKER = "turn:127.0.0.1:9?transport=udp";
@@ -93,6 +94,128 @@ const tests = (["relay", "enforced"] as const).map((mode) =>
 		},
 	})
 );
+
+for (const mode of ["relay", "enforced"] as const) {
+	const policy = {
+		mode,
+		iceServers: [] as RTCIceServer[],
+		networkIsolationVerified: mode === "relay",
+	};
+	tests.push(
+		webrtcTest({
+			name: `webrtc-relay-policy-snapshot-${mode}`,
+			html: webrtcPageHtml(),
+			config: policy,
+			async prepare() {
+				const credentials = await fetchTurnCredentials();
+				policy.iceServers = [
+					{
+						urls: credentials.urls,
+						username: credentials.username,
+						credential: credentials.credential,
+					},
+				];
+			},
+			async fn(_ctx, frame) {
+				const result = await frame.evaluate(async () => {
+					const client = (window as any)[Symbol.for("scramjet client global")];
+					const config = client.config;
+					const original = {
+						mode: config.webrtc.mode,
+						networkIsolationVerified: config.webrtc.networkIsolationVerified,
+						urls: JSON.stringify(config.webrtc.iceServers),
+					};
+					for (const mutate of [
+						() => {
+							config.webrtc.mode = "off";
+						},
+						() => {
+							config.webrtc.networkIsolationVerified = true;
+						},
+						() => {
+							config.webrtc.iceServers[0].urls = "stun:attacker.invalid";
+						},
+						() => {
+							config.webrtc = { mode: "off" };
+						},
+						() => {
+							client.context.config = { ...config, webrtc: { mode: "off" } };
+						},
+						() => {
+							client.context = {
+								...client.context,
+								config: { ...config, webrtc: { mode: "off" } },
+							};
+						},
+						() => {
+							client.init.context = {
+								...client.context,
+								config: { ...config, webrtc: { mode: "off" } },
+							};
+						},
+						() => {
+							client.init.hookSubcontext = () => {};
+						},
+						() => {
+							client.init = { ...client.init, hookSubcontext: () => {} };
+						},
+					]) {
+						try {
+							mutate();
+						} catch {}
+					}
+					const realms = [];
+					for (const srcdoc of [false, true]) {
+						const iframe = document.createElement("iframe");
+						if (srcdoc) iframe.srcdoc = "<p>policy snapshot</p>";
+						document.body.append(iframe);
+						await new Promise((resolve) => setTimeout(resolve, 250));
+						try {
+							const pc = new iframe.contentWindow!.RTCPeerConnection({
+								iceTransportPolicy: "all",
+								iceServers: [],
+							});
+							const actual = pc.getConfiguration();
+							pc.close();
+							realms.push({
+								created: true,
+								policy: actual.iceTransportPolicy,
+								urls: actual.iceServers!.flatMap((server) => server.urls),
+							});
+						} catch (error) {
+							realms.push({ created: false, error: String(error) });
+						}
+						iframe.remove();
+					}
+					return {
+						original,
+						current: {
+							mode: client.config.webrtc.mode,
+							networkIsolationVerified:
+								client.config.webrtc.networkIsolationVerified,
+							urls: JSON.stringify(client.config.webrtc.iceServers),
+						},
+						realms,
+					};
+				});
+				assert.deepEqual(result.current, result.original);
+				for (const realm of result.realms) {
+					if (mode === "enforced") {
+						assert.equal(realm.created, false);
+						assert.match(realm.error!, /networkIsolationVerified/);
+					} else {
+						assert.equal(realm.created, true);
+						assert.equal(realm.policy, "relay");
+						assert.deepEqual(
+							realm.urls,
+							policy.iceServers.flatMap((server) => server.urls)
+						);
+					}
+				}
+			},
+		})
+	);
+}
 
 tests.push(
 	webrtcTest({

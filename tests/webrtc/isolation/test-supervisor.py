@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def browser():
-    child = subprocess.Popen([os.environ["RUNWAY_BROWSER_EXECUTABLE"], "--no-sandbox",
+    child = subprocess.Popen([os.environ["RUNWAY_BROWSER_EXECUTABLE"],
                               "--headless", "--disable-gpu", "--remote-debugging-port=9222", "about:blank"],
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     Path(os.environ["SUPERVISOR_READY"]).write_text(str(child.pid))
@@ -68,6 +68,55 @@ def verify(output):
                         time.sleep(.1)
                     pids = subprocess.check_output(["ip", "netns", "pids", "sjclient"], text=True).split()
                     assert str(browser_pid) in pids, "browser is outside the supervised namespace"
+                    def status(pid):
+                        return dict(line.split(":", 1) for line in (Path("/proc") / str(pid) / "status").read_text().splitlines() if ":" in line)
+                    browser_status = status(browser_pid)
+                    assert all(int(value) != 0 for value in browser_status["Uid"].split()), "browser retained root uid"
+                    assert all(int(value) != 0 for value in browser_status["Gid"].split()), "browser retained root gid"
+                    assert all(int(browser_status[key].strip(), 16) == 0 for key in ["CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"]), "browser retained capabilities"
+                    assert browser_status["NoNewPrivs"].strip() == "1"
+                    command_line = (Path("/proc") / str(browser_pid) / "cmdline").read_bytes().split(bytes([0]))
+                    assert b"--no-sandbox" not in command_line
+                    # Sandboxed renderers may use their own network namespace.
+                    # Follow process ancestry rather than only the browser netns.
+                    renderers = []
+                    while not renderers:
+                        processes = {}
+                        for proc in Path("/proc").iterdir():
+                            if not proc.name.isdigit():
+                                continue
+                            try:
+                                processes[proc.name] = status(proc.name)
+                            except FileNotFoundError:
+                                continue
+                        descendants = {str(browser_pid)}
+                        while True:
+                            children = {pid for pid, info in processes.items()
+                                        if info["PPid"].strip() in descendants}
+                            if children <= descendants:
+                                break
+                            descendants.update(children)
+                        for pid in descendants:
+                            try:
+                                cmd = (Path("/proc") / pid / "cmdline").read_bytes()
+                                if b"--type=renderer" in cmd:
+                                    renderer = processes[pid]
+                                    assert renderer["Seccomp"].strip() == "2", "renderer seccomp sandbox is disabled"
+                                    assert int(renderer.get("Seccomp_filters", "0")) > int(browser_status.get("Seccomp_filters", "0")), "renderer lacks an additional sandbox filter"
+                                    renderers.append(pid)
+                            except FileNotFoundError:
+                                continue
+                        if not renderers:
+                            if supervisor.poll() is not None or time.monotonic() > deadline:
+                                raise AssertionError("native renderer was not observed")
+                            time.sleep(.1)
+                    pids = sorted(set(pids) | descendants)
+                    denied = subprocess.run(["ip", "netns", "exec", "sjclient", "setpriv",
+                                             "--reuid=65534", "--regid=65534", "--clear-groups",
+                                             "--bounding-set=-all", "--inh-caps=-all", "--ambient-caps=-all",
+                                             "--no-new-privs", "nft", "delete", "table", "inet", "scramjet_webrtc"],
+                                            capture_output=True, text=True)
+                    assert denied.returncode != 0 and "Operation not permitted" in denied.stderr, "browser identity can modify nftables"
                     started = time.monotonic()
                     command = (["delete", "table", "inet", "scramjet_webrtc"] if mutation == "delete" else
                                ["insert", "rule", "inet", "scramjet_webrtc", "output", "tcp", "dport", "19999", "accept"])
@@ -93,6 +142,8 @@ def verify(output):
                         time.sleep(.05)
                     assert not surviving(), f"namespace processes survive: {surviving()}"
                     receipts.append({"mutation": mutation, "nativeBrowserReady": True,
+                                     "browserUid": browser_status["Uid"].split(), "browserCapabilitiesZero": True,
+                                     "noNewPrivileges": True, "rendererSeccomp": True, "nftablesMutationDenied": True,
                                      "exitCode": code, "elapsedSeconds": round(elapsed, 3),
                                      "browserTerminated": True, "namespaceRemoved": True, "ok": True})
                 finally:

@@ -8,11 +8,30 @@ import {
 	normalizeWebrtcConfig,
 	parseWebrtcCredentialPayload,
 	sanitizeRtcConfiguration,
+	snapshotWebrtcConfig,
 	sdpCandidateTypes,
 } from "../../../packages/core/src/shared/webrtc.ts";
 
 const TURN_A = "turn:relay.example:3478?transport=udp";
 const TURN_B = "turns:relay.example:5349?transport=tcp";
+
+test("snapshot: freezes a cloned policy and reuses its inherited identity", () => {
+	const input = {
+		mode: "relay" as const,
+		iceServers: [{ urls: [TURN_A], username: "test", credential: "test" }],
+	};
+	const config = snapshotWebrtcConfig(input);
+	input.iceServers[0].urls[0] = TURN_B;
+	assert.equal(config.iceServers[0].urls[0], TURN_A);
+	assert.equal(snapshotWebrtcConfig(config), config);
+	assert.equal(Object.isFrozen(config), true);
+	assert.equal(Object.isFrozen(config.iceServers), true);
+	assert.equal(Object.isFrozen(config.iceServers[0]), true);
+	assert.equal(Object.isFrozen(config.iceServers[0].urls), true);
+	assert.throws(() => {
+		config.mode = "off";
+	}, TypeError);
+});
 
 test("normalize: defaults to off with no servers", () => {
 	const config = normalizeWebrtcConfig(undefined);

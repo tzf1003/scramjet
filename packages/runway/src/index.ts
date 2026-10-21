@@ -786,6 +786,8 @@ async function main() {
 				: {}),
 		};
 		if (browserName === "chromium") {
+			if (process.env.RUNWAY_CHROMIUM_SANDBOX === "1")
+				launchOptions.chromiumSandbox = true;
 			const args: string[] = [];
 			if (process.env.WEBRTC_FAKE_MEDIA === "1") {
 				args.push(

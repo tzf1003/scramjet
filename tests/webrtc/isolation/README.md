@@ -2,7 +2,10 @@
 
 `run-in-netns.sh` runs the host-side test process and launches only Chromium in a
 fresh dual-stack Linux network namespace. It needs root, Python 3, nftables,
-iproute2 and tcpdump. See `docs/webrtc-deployment.md` for the complete command.
+iproute2, tcpdump and `setpriv`. Setup and supervision retain root; Chromium runs
+with a non-root UID/GID, zero capabilities, `no_new_privs`, a private profile and
+its native sandbox enabled. User-namespace sandbox support is required. See
+`docs/webrtc-deployment.md` for the complete command.
 
 The policy permits only explicitly configured proxy, credential/signaling, TURN
 and optional DNS endpoints. There is no broad established-connection exception.

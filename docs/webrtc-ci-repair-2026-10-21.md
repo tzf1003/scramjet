@@ -19,7 +19,7 @@ Evidence root: /Volumes/1T/scramjet/verification/2026-10-21-ci-repair/.
 | macOS Playwright WebKit WebRTC | 25/25 | webkit-full/webkit-udp.log |
 | Supervised Linux IPv4 | 9/9; 5,539 TURN packets; 0 unauthorized normal packets | linux-ipv4/ |
 | Supervised Linux IPv6 | 9/9; 5,580 TURN packets; 0 unauthorized normal packets | linux-ipv6/ |
-| Direct packet controls | 15 unauthorized packets detected in each family; both expected-negative analyses exit 0 | linux-ipv4/negative-egress.json, linux-ipv6/negative-egress.json |
+| Direct packet controls | 15 unauthorized IPv6 packets detected per run; both expected-negative analyses exit 0 | linux-ipv4/negative-egress.json, linux-ipv6/negative-egress.json |
 | TURN allocation lifecycle | 0 -> 2 -> 0 owned relay sockets | linux-resource/linux.log; both full Linux suites |
 | Coturn authenticated peer ACLs | 36/36 | peer-acl.json |
 | Native Chromium policy-loss supervisor | 2/2, browser terminated and namespace removed | supervisor/result.json |
@@ -41,7 +41,7 @@ These measurements cover desktop automation and the supervised Linux Docker topo
 
 ## Coordinated transport and playback lifecycle
 
-At commit 281735d7, ordinary CI run 39544921749 passed. WebRTC run 39544921682 passed quality, units, Chromium and all three TURN transports, plus the complete enforced job. Firefox finished 24/25: one peer closed its connection after receiving the ICE-restart echo while the other was still collecting asynchronous statistics. WebKit finished 24/25: the added video track decoded RTP frames, but its playback element remained at HAVE_NOTHING. Linux packet readback recorded 7,415 IPv4 and 5,817 IPv6 authorized TURN packets, zero unauthorized normal packets, and 16 detected direct-control packets per family. These artifacts identify the PR merge snapshot 59b4838118aaef256ca0ff7a9d95eb8b5b82c992.
+At commit 281735d7, ordinary CI run 39544921749 passed. WebRTC run 39544921682 passed quality, units, Chromium and all three TURN transports, plus the complete enforced job. Firefox finished 24/25: one peer closed its connection after receiving the ICE-restart echo while the other was still collecting asynchronous statistics. WebKit finished 24/25: the added video track decoded RTP frames, but its playback element remained at HAVE_NOTHING. Linux packet readback recorded 7,415 IPv4 and 5,817 IPv6 authorized TURN packets, zero unauthorized normal packets, and 16 IPv6 direct-control packets per run. These artifacts identify the PR merge snapshot 59b4838118aaef256ca0ff7a9d95eb8b5b82c992.
 
 The DataChannel fixture now retains both native connections until both results are captured, then closes both connections and signaling sockets and cancels pending timers. Cleanup waits for native channel closure and asserts both peers and channels are closed.
 
@@ -86,3 +86,27 @@ Commit 9a241653e3fc5b0acf7df7d93b2d0b63f5ed8728 completed all four workflows suc
 The PR enforced artifacts recorded 5,462 IPv4 and 7,473 IPv6 authorized TURN packets; the push artifacts recorded 5,599 and 6,022. Normal captures contained zero unauthorized packets, while each expected-negative direct control detected 16 unauthorized packets. All 18 downloaded manifests matched their recorded hashes. The final WebRTC artifacts identify source SHA-256 80cbf358424428c2937812e03874e7a10d7c84b233685a470f5cf8d4dca2429f. Ordinary CI retained 562 passed, 139 expected failures and 6 expected errors with expected=158, actual=145, unexpected=0, fixed=13.
 
 The related-address review concern was probed with distinct Linux client and Coturn addresses. Chromium 149.0.7827.0, Firefox 151.0 and Playwright WebKit 26.5 each established an authorized TURN DataChannel and exchanged a real echo. Chromium/WebKit exposed raddr 0.0.0.0; Firefox exposed the TURN endpoint as its related address. Native local-candidate stats omitted relatedAddress, and candidate/SDP records did not contain the distinct client address. The concern was not reproduced in this controlled UDP topology and remains open for other browser versions or public NAT behavior. Probe records are retained under /Volumes/1T/scramjet/verification/2026-10-21-ci-repair/.
+
+## Immutable configuration and supervised browser identity
+
+The final local hardening test artifacts record source SHA-256 `683815d0ac67690e8b194b984b4b2a7715446c10f34e53ebae292aa8006efc15` and the implementation patch SHA-256 `0a0524c7f07cbd2aceca943e9730756597477d28803b0c9cdde527157042640b`. Browser and isolation `source.json` records include the runtime bundle hashes; each manifest was checked against the files on disk with zero mismatches.
+
+The policy snapshot now clones and freezes the normalized WebRTC configuration, including ICE server entries and URL arrays, so later realm initialization inherits the same immutable policy. The regression suite covers mutation attempts against relay and enforced settings. Supervised Chromium runs as UID/GID 65534 with empty capability sets and `no_new_privs`. Fault tests confirm renderer seccomp filters and denied nftables mutation, and verify that the supervisor terminates the browser and removes the namespace after both a removed policy table and an injected allow rule.
+
+| Final local hardening check | Result | Evidence |
+| --- | --- | --- |
+| Policy unit tests | 15/15 | security-handoff-unit.log |
+| TURN credential unit tests | 2/2 | security-handoff-credentials.log |
+| Core, declarations and Controller TypeScript checks | 0 errors | security-handoff-quality.log |
+| Core lint | 0 errors, 168 warnings | security-handoff-quality.log |
+| macOS Chromium relay suite | 42/42 | security-browser/ |
+| macOS Firefox relay suite | 38/38 | security-browser/ |
+| macOS WebKit relay suite with default route TURN address | 16/38 | security-browser/ |
+| macOS WebKit relay suite with LAN TURN address | 38/38 | security-webkit-lan-ready/ |
+| Cross-browser policy snapshot matrix | 2/2 per Chromium, Firefox and WebKit | security-snapshot-final/ |
+| Supervised Linux IPv4 enforced suite | 22/22; 7,324 TURN packets; 0 unauthorized normal packets | security-ipv4/ |
+| Supervised Linux IPv6 enforced suite | 22/22; 5,495 TURN packets; 0 unauthorized normal packets | security-ipv6/ |
+| Direct packet negative controls | 15 unauthorized IPv6 packets detected per run; expected-negative analyses exit 0 | security-ipv4/, security-ipv6/ |
+| Policy-loss supervisor fault cases | 2/2; browser terminated and namespace removed | security-supervisor-2/ |
+
+The first macOS WebKit run used the default route-selected TURN address and timed out on relay gathering and direct-connect prerequisites. Repeating the same suite against the reachable LAN TURN address completed 38/38; this records the route-specific local environment result and does not alter the platform acceptance scope above. The WebKit result is Playwright WebKit on macOS, not physical iOS Safari. Full run records, browser output, packet captures and supervisor receipts are in `/Volumes/1T/scramjet/verification/2026-10-21-ci-repair/`.

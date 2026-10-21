@@ -15,6 +15,9 @@ const String_trim = globalThis.String.prototype.trim;
 const String_toLowerCase = globalThis.String.prototype.toLowerCase;
 const RegExp_exec = globalThis.RegExp.prototype.exec;
 const Symbol_iterator = globalThis.Symbol.iterator;
+const policySnapshots = new globalThis.WeakSet<object>();
+const WeakSet_has = globalThis.WeakSet.prototype.has;
+const WeakSet_add = globalThis.WeakSet.prototype.add;
 
 function append<T>(values: T[], value: T): void {
 	Object_defineProperty(values, values.length, {
@@ -256,6 +259,23 @@ export function normalizeWebrtcConfig(
 			input.networkIsolationVerified ??
 			defaultWebrtcConfig.networkIsolationVerified,
 	};
+}
+
+/** Clone and freeze the policy inherited by later injected realms. */
+export function snapshotWebrtcConfig(
+	input: Partial<ScramjetWebrtcConfig> | null | undefined
+): ScramjetWebrtcConfig {
+	if (input && Reflect_apply(WeakSet_has, policySnapshots, [input]))
+		return input as ScramjetWebrtcConfig;
+	const config = normalizeWebrtcConfig(input);
+	for (let index = 0; index < config.iceServers.length; index++) {
+		const server = config.iceServers[index];
+		if (Array_isArray(server.urls)) Object_freeze(server.urls);
+		Object_freeze(server);
+	}
+	Object_freeze(config.iceServers);
+	Reflect_apply(WeakSet_add, policySnapshots, [config]);
+	return Object_freeze(config);
 }
 
 /**

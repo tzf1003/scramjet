@@ -117,6 +117,21 @@ deployment uses IP literals.
 7. **TURN credentials are bearer credentials for their TTL.** TLS to the TURN
    server is recommended where the network is untrusted; coturn still authenticates
    allocations with HMAC.
+   The browser receives the short-lived username/password and native
+   `RTCPeerConnection.getConfiguration()` exposes them to the application. The
+   injected configuration and same-origin refresh endpoint are also readable by
+   page code. Treat every proxied page as a holder of those credentials: use
+   per-session issuance, short TTLs, quotas, peer ACLs and revocation. The server
+   HMAC/session-signing secrets remain server-side. Keeping TURN bearer
+   credentials confidential from hostile same-origin JavaScript requires a
+   privileged browser or native broker outside this hook's trust boundary.
+8. **Client configuration is page-visible.** The injected WebRTC policy is a
+   cloned, deeply frozen snapshot. Its configuration/context references and
+   subcontext callback are non-writable, so edits through the public client
+   object cannot change the policy inherited by later injected realms. This
+   protects that configuration path; the public Scramjet client and native
+   stores are not a JavaScript security sandbox. Kernel egress rules remain
+   the authoritative boundary for hostile pages.
 
 ## 7. Verification requirements
 

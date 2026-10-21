@@ -45,6 +45,7 @@ import {
 	_Map,
 } from "@/shared/snapshot";
 import { createIndirectEval } from "./shared/eval";
+import { snapshotWebrtcConfig } from "@/shared/webrtc";
 
 // https://github.com/Microsoft/TypeScript/issues/27024#issuecomment-421529650
 type IfEquals<T, U, Y = unknown, N = never> =
@@ -269,6 +270,43 @@ export class ScramjetClient {
 		this.box.registerClient(this, global as Self);
 
 		this.context = init.context;
+		let webrtc: ScramjetConfig["webrtc"];
+		try {
+			webrtc = snapshotWebrtcConfig(this.context.config.webrtc);
+		} catch (error) {
+			dbg.error("invalid scramjet webrtc config", error);
+			webrtc = snapshotWebrtcConfig({ mode: "enforced" });
+		}
+		Object_defineProperty(this.context.config, "webrtc", {
+			value: webrtc,
+			writable: false,
+			configurable: false,
+		});
+		Object_defineProperty(this.context, "config", {
+			value: this.context.config,
+			writable: false,
+			configurable: false,
+		});
+		Object_defineProperty(this, "context", {
+			value: this.context,
+			writable: false,
+			configurable: false,
+		});
+		Object_defineProperty(init, "context", {
+			value: this.context,
+			writable: false,
+			configurable: false,
+		});
+		Object_defineProperty(init, "hookSubcontext", {
+			value: init.hookSubcontext,
+			writable: false,
+			configurable: false,
+		});
+		Object_defineProperty(this, "init", {
+			value: init,
+			writable: false,
+			configurable: false,
+		});
 		if (init.initHeaders)
 			this.initHeaders = ScramjetHeaders.fromRawHeaders(init.initHeaders);
 		this.history = init.history;

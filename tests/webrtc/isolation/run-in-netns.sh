@@ -23,7 +23,18 @@ shift_args=("$@")
 if [ "${shift_args[0]:-}" = "--" ]; then shift_args=("${shift_args[@]:1}"); fi
 if [ "${#shift_args[@]}" -eq 0 ]; then echo "a host-side test command is required" >&2; exit 1; fi
 : "${PLAYWRIGHT_CHROMIUM_EXECUTABLE:?set the installed Chromium executable path}"
+: "${WEBRTC_BROWSER_UID:=65534}"
+: "${WEBRTC_BROWSER_GID:=65534}"
+if ! [[ "$WEBRTC_BROWSER_UID" =~ ^[1-9][0-9]*$ && "$WEBRTC_BROWSER_GID" =~ ^[1-9][0-9]*$ ]]; then
+ echo "browser uid/gid must be non-root numeric identities" >&2; exit 1
+fi
+command -v setpriv >/dev/null
 STAGING=$(mktemp -d)
+mkdir "$STAGING/home" "$STAGING/profiles"
+chown "$WEBRTC_BROWSER_UID:$WEBRTC_BROWSER_GID" "$STAGING/home"
+chmod 711 "$STAGING" "$STAGING/profiles"
+export WEBRTC_BROWSER_UID WEBRTC_BROWSER_GID WEBRTC_BROWSER_HOME="$STAGING/home"
+export WEBRTC_BROWSER_PROFILE_ROOT="$STAGING/profiles"
 RUN_PID=""
 CAPTURE_PID=""
 NAT_ADDED=0
@@ -102,12 +113,27 @@ fi
 cat >"$STAGING/chromium" <<'EOF'
 #!/bin/bash
 set -euo pipefail
-exec ip netns exec "$WEBRTC_NETNS" "$PLAYWRIGHT_CHROMIUM_EXECUTABLE" "$@"
+args=()
+profile=$(mktemp -d "$WEBRTC_BROWSER_PROFILE_ROOT/profile.XXXXXX")
+chown "$WEBRTC_BROWSER_UID:$WEBRTC_BROWSER_GID" "$profile"
+for arg in "$@"; do
+ case "$arg" in
+  --no-sandbox|--no-sandbox=*|--disable-setuid-sandbox|--disable-namespace-sandbox|--disable-seccomp-filter-sandbox|--disable-gpu-sandbox|--single-process|--in-process-gpu)
+   echo "isolated Chromium requires its native sandbox" >&2; exit 1;;
+  --user-data-dir=*) continue;;
+ esac
+ args+=("$arg")
+done
+exec ip netns exec "$WEBRTC_NETNS" setpriv \
+ --reuid="$WEBRTC_BROWSER_UID" --regid="$WEBRTC_BROWSER_GID" --clear-groups \
+ --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs \
+ env HOME="$WEBRTC_BROWSER_HOME" "$PLAYWRIGHT_CHROMIUM_EXECUTABLE" "${args[@]}" --user-data-dir="$profile"
 EOF
 chmod 700 "$STAGING/chromium"
 export WEBRTC_NETNS="$NETNS" RUNWAY_BROWSER_EXECUTABLE="$STAGING/chromium"
 export RUNWAY_HARNESS_HOST="$HOST_IP" RUNWAY_TEST_HOST="$HOST_IP" RUNWAY_TURN_HOST="$TURN_HOST"
-export RUNWAY_CHROMIUM_ARGS="${RUNWAY_CHROMIUM_ARGS:-} --no-sandbox --unsafely-treat-insecure-origin-as-secure=http://$HOST_IP:$SCRAMJET_PORT"
+export RUNWAY_CHROMIUM_SANDBOX=1
+export RUNWAY_CHROMIUM_ARGS="${RUNWAY_CHROMIUM_ARGS:-} --unsafely-treat-insecure-origin-as-secure=http://$HOST_IP:$SCRAMJET_PORT"
 export SCRAMJET_EXTRA_TCP_PORTS="${SCRAMJET_EXTRA_TCP_PORTS:-18081,18083}"
 export WEBRTC_SIGNAL_PORT="${WEBRTC_SIGNAL_PORT:-18083}"
 export UNAUTHORIZED_TCP_URL="${UNAUTHORIZED_TCP_URL:-http://$HOST_IP:18084/}"

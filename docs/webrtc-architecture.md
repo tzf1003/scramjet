@@ -75,9 +75,13 @@ Relevant mechanisms:
 
 ## 3. Modes
 
-Runtime configuration lives in `ScramjetConfig.webrtc` and is set by the trusted
-controller, never by the proxied page. A page can call the WebRTC APIs but cannot
-change the policy snapshot.
+Runtime configuration lives in `ScramjetConfig.webrtc` and is supplied by the
+controller. Each client installs a cloned, deeply frozen policy and locks the
+configuration/context references and subcontext callback used by later realms.
+The snapshot is page-visible. Short-lived TURN bearer credentials are also
+visible through native `getConfiguration()` and the refresh endpoint. The
+public Scramjet client is not a JavaScript security sandbox; hostile-page egress
+acceptance depends on the enforced network boundary.
 
 ```ts
 type WebrtcMode = "off" | "relay" | "enforced";

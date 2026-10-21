@@ -9,9 +9,10 @@ const directory = path.dirname(fileURLToPath(import.meta.url));
 const ns = process.env.WEBRTC_NETNS;
 if (!ns || !process.env.RUNWAY_BROWSER_EXECUTABLE)
 	throw new Error("the supervised namespace is required");
-const args = ["--no-sandbox", "--disable-features=WebRtcHideLocalIpsWithMdns"];
+const args = ["--disable-features=WebRtcHideLocalIpsWithMdns"];
 const isolated = await chromium.launch({
 	executablePath: process.env.RUNWAY_BROWSER_EXECUTABLE,
+	chromiumSandbox: true,
 	args,
 });
 const outside = await chromium.launch({

@@ -164,6 +164,14 @@ supply application signaling. If refreshed configuration cannot be applied, or
 credentials expire before refresh, fail-closed/enforced connections close. If the endpoint is unavailable, new
 PeerConnections throw `NotSupportedError` and never fall back to direct ICE.
 
+The injected policy is deeply frozen, including its ICE-server URL arrays, and
+the client locks the references used for subcontext inheritance. Browser TURN
+username/password pairs remain visible to page JavaScript through native
+`getConfiguration()`, the injected configuration and the credential endpoint.
+Issue them per session with short TTLs, quotas, peer ACLs and revocation; keep
+server signing secrets on the server. A deployment requiring browser bearer
+credentials to be hidden from proxied JavaScript needs a privileged/native broker.
+
 Environment-name mapping used by deployment tooling:
 
 | Variable                            | Runtime field                                               |
@@ -204,7 +212,14 @@ boundary is the kernel:
    port allowances and unrestricted established-flow allowances are not used.
    The launcher performs a real native-browser direct-connect negative control,
    captures client packets and stops the run if its attested rule digest changes.
-   Root, Python 3, iproute2, nftables and tcpdump are required.
+   Root, Python 3, iproute2, nftables, tcpdump and `setpriv` are required for
+   setup/supervision. Chromium runs as UID/GID 65534 by default (override with
+   `WEBRTC_BROWSER_UID`/`WEBRTC_BROWSER_GID`, both non-root), with supplementary
+   groups/capabilities cleared, `no_new_privs` set and its native sandbox enabled.
+   A root-owned wrapper supplies a private browser-writable profile and rejects
+   sandbox-disabling flags. The host must support unprivileged user namespaces;
+   unsupported sandbox startup fails the run. Plain-HTTP secure-origin exceptions
+   are for the local test harness; use HTTPS for deployment.
 
 3. Configure coturn's external address for that namespace:
    `TURN_EXTERNAL_IP=10.200.0.1/<container-ip>`, and include the client's peer
