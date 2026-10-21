@@ -319,7 +319,21 @@ const test = webrtcTest({
 			channel.onopen = () => channel.send("ready");
 			channel.onmessage = async (event) => {
 				if (event.data !== "media-ok") return;
-				const report = await pc.getStats();
+				// Sender and receiver stats are independently cached by the browser.
+				// Keep the same byte threshold and wait for the sender's snapshot to
+				// catch up after the receiver has confirmed delivery.
+				let report = await pc.getStats();
+				let outboundBytes = 0;
+				for (let attempt = 0; attempt < 25; attempt += 1) {
+					outboundBytes = 0;
+					report.forEach((stat) => {
+						if (stat.type === "outbound-rtp")
+							outboundBytes += Number(stat.bytesSent ?? 0);
+					});
+					if (outboundBytes > 100_000) break;
+					await tick(200);
+					report = await pc.getStats();
+				}
 				const byId: Record<string, Record<string, unknown>> = {};
 				report.forEach((stat, id) => {
 					byId[id] = stat as unknown as Record<string, unknown>;
@@ -336,12 +350,6 @@ const test = webrtcTest({
 				const local = pair?.localCandidateId
 					? byId[String(pair.localCandidateId)]
 					: undefined;
-				let outboundBytes = 0;
-				for (const stat of Object.values(byId)) {
-					if (stat.type === "outbound-rtp") {
-						outboundBytes += Number(stat.bytesSent ?? 0);
-					}
-				}
 				done.resolve({
 					localType: (local?.candidateType as string) ?? null,
 					localPort: (local?.port as number) ?? null,

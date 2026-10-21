@@ -30,11 +30,24 @@ NAT_ADDED=0
 NAT6_ADDED=0
 FORWARD_BEFORE=""
 FORWARD6_BEFORE=""
+stop_isolated_processes() {
+ # The browser is untrusted. Freeze its namespace process tree before killing
+ # it so handlers cannot ignore SIGTERM or fork past a one-shot PID list.
+ local pids previous=""
+ for attempt in {1..20}; do
+  pids=$(ip netns pids "$NETNS" 2>/dev/null) || pids=""
+  [ -z "$pids" ] && return 0
+  for pid in $pids; do kill -STOP "$pid" 2>/dev/null || true; done
+  if [ "$pids" = "$previous" ]; then break; fi
+  previous=$pids
+ done
+ for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
+}
 cleanup() {
  set +e
  if [ -n "$RUN_PID" ]; then kill "$RUN_PID" 2>/dev/null; fi
  if [ -n "$CAPTURE_PID" ]; then kill -INT "$CAPTURE_PID" 2>/dev/null; wait "$CAPTURE_PID" 2>/dev/null; fi
- ip netns pids "$NETNS" | xargs -r kill 2>/dev/null
+ stop_isolated_processes
  ip netns del "$NETNS" 2>/dev/null
  ip link del "$HOST_IF" 2>/dev/null
  if [ "$NAT_ADDED" = 1 ]; then
@@ -125,7 +138,7 @@ RUN_PID=$!
 while kill -0 "$RUN_PID" 2>/dev/null; do
  CURRENT_DIGEST=$(ip netns exec "$NETNS" python3 "$SCRIPT_DIR/policy.py" digest 2>/dev/null) || CURRENT_DIGEST=invalid
  if [ "$CURRENT_DIGEST" != "$EXPECTED_DIGEST" ]; then
-  ip netns pids "$NETNS" | xargs -r kill 2>/dev/null || true
+  stop_isolated_processes
   kill "$RUN_PID" 2>/dev/null || true
   wait "$RUN_PID" 2>/dev/null || true
   RUN_PID=""

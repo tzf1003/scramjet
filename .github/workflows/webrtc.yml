@@ -201,6 +201,12 @@ jobs:
       - name: IPv4 enforced browser suite and packet controls
         run: python3 tests/webrtc/isolation/run-linux-suite.py --output tests/webrtc/artifacts/ipv4
 
+      - name: Coturn authenticated IPv4 and IPv6 peer ACLs
+        run: python3 tests/webrtc/coturn/test-peer-acl.py --output tests/webrtc/artifacts/peer-acl.json
+
+      - name: Stop native browser when isolation policy changes
+        run: python3 tests/webrtc/isolation/test-supervisor.py --output tests/webrtc/artifacts/supervisor
+
       - name: IPv6 enforced browser suite and packet controls
         run: python3 tests/webrtc/isolation/run-linux-suite.py --ipv6 --output tests/webrtc/artifacts/ipv6
 
