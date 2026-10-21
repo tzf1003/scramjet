@@ -5,6 +5,8 @@ export const String = globalThis.String;
 export const String_fromCodePoint = globalThis.String.fromCodePoint;
 export const String_fromCharCode = globalThis.String.fromCharCode;
 const Function_prototype_call = globalThis.Function.prototype.call;
+export const Function_prototype_toString =
+	globalThis.Function.prototype.toString;
 export const String_startsWith = Function_prototype_call.bind(
 	globalThis.String.prototype.startsWith
 ) as (str: string, searchString: string, position?: number) => boolean;

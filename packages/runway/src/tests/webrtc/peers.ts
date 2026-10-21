@@ -20,11 +20,16 @@ declare global {
 export function initializeDataPeer({
 	config,
 	sender,
+	prototypeConstructor = false,
 }: {
 	config: RTCConfiguration;
 	sender: boolean;
+	prototypeConstructor?: boolean;
 }) {
-	const pc = new RTCPeerConnection(config);
+	const Constructor = prototypeConstructor
+		? (RTCPeerConnection.prototype.constructor as typeof RTCPeerConnection)
+		: RTCPeerConnection;
+	const pc = new Constructor(config);
 	const state: PeerState = {
 		pc,
 		echoes: [],

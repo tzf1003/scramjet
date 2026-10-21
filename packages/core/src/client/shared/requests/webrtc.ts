@@ -18,6 +18,8 @@ import {
 	Math_max,
 	Math_min,
 	Object_getOwnPropertyDescriptor,
+	Object_defineProperty,
+	Function_prototype_toString,
 	Reflect_apply,
 	Promise_race,
 	Reflect_set,
@@ -703,6 +705,52 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 	}
 	hookPrototype("RTCPeerConnection", nativeRtc);
 	hookPrototype("webkitRTCPeerConnection", nativeWebkit);
+
+	// All page-reachable references must enter the same constructor and method
+	// guards. Keep native implementations only in this module's captured closures.
+	const protectReference = (native: unknown, guarded: unknown) => {
+		if (typeof native !== "function" || typeof guarded !== "function") return;
+		client.box.nativeFunctionStrings.set(
+			guarded,
+			client.box.nativeFunctionStrings.get(native) ??
+				Reflect_apply(Function_prototype_toString, native, [])
+		);
+		client.box.unproxy.delete(guarded);
+		for (const name in client.box.ctors) {
+			const entries = client.box.ctors[name];
+			for (let index = 0; index < entries.length; index++) {
+				if (entries[index] === native)
+					entries[index] = guarded as (typeof entries)[number];
+			}
+		}
+	};
+	for (const name of ["RTCPeerConnection", "webkitRTCPeerConnection"]) {
+		const native = name === "RTCPeerConnection" ? nativeRtc : nativeWebkit;
+		if (!native) continue;
+		const guarded = globals[name] as NativeRtcConstructor;
+		const descriptor = Object_getOwnPropertyDescriptor(
+			native.prototype,
+			"constructor"
+		)!;
+		Object_defineProperty(native.prototype, "constructor", {
+			...descriptor,
+			value: guarded,
+		});
+		client.natives.store[name] = guarded;
+		protectReference(native, guarded);
+		for (const method of [
+			"setConfiguration",
+			"setLocalDescription",
+			"restartIce",
+			"close",
+		] as const) {
+			const guardedMethod = guarded.prototype[method];
+			const key = `${name}.prototype.${method}`;
+			const nativeMethod = client.natives.store[key];
+			client.natives.store[key] = guardedMethod;
+			protectReference(nativeMethod, guardedMethod);
+		}
+	}
 
 	if (config.credentialEndpoint && credential.iceServers.length === 0) {
 		void refreshCredentials().catch((error) =>

@@ -121,7 +121,7 @@ The Python runner launches the test in an owned process session and bounds idle 
 
 The default allowance is `max(WEBRTC_SOAK_SECONDS, 10 * WEBRTC_MEDIA_SOAK_SECONDS)`. The idle limit is `300 + allowance` seconds and the total limit is `1800 + 2 * allowance` seconds. `WEBRTC_RUN_IDLE_TIMEOUT_SECONDS` and `WEBRTC_RUN_TIMEOUT_SECONDS` override those limits. Soak durations, timeouts and the termination grace period must be finite positive values. WebRTC CI runs the HTTP-fixture disposal and Python watchdog regressions.
 
-The current local source SHA-256 is `ebe6ed72074197be4f0d28ebdc9aeb3d9271cd87405acd393150411c3a98f395`. Evidence is under `/Volumes/1T/scramjet/verification/2026-10-21-ci-repair/runner-watchdog/`.
+The runner-repair local source SHA-256 is `ebe6ed72074197be4f0d28ebdc9aeb3d9271cd87405acd393150411c3a98f395`. Evidence is under `/Volumes/1T/scramjet/verification/2026-10-21-ci-repair/runner-watchdog/`.
 
 | Local check | Result | Evidence |
 | --- | --- | --- |
@@ -141,4 +141,35 @@ The runs used 15-second data soak, 2.5-second media sampling per phase and 120-s
 
 An earlier WebKit run in `webkit-final/` used a previously valid LAN address after the interface changed. Relay candidate gathering was unavailable, and the run was manually interrupted with exit code 130. Full-suite WebKit coverage is the completed 38/38 repeat in `webkit-current-lan/`; the interrupted run remains a diagnostic audit record.
 
-These are local results for the current source. CI results for the upcoming repair commit will be recorded after the pushed revision completes. Acceptance covers desktop automation and the supervised Docker network namespace. Real iOS Safari, Windows, Android, physical devices and permission flows, independent public peers, NAT64/VPN/multihoming, trusted TURN TLS, Firefox/WebKit TLS and hour-scale soak, performance and resource curves require deployment evidence.
+The runner repair was pushed as `39d803c11e5241f46482e127b196776d4dd7633c`. PR and push ordinary CI runs `39595599725` and `39595592797`, and WebRTC runs `39595599668` and `39595592916`, completed successfully. These results apply to the runner-repair revision.
+
+## Guarded constructor references and native function compatibility
+
+Repair baseline: `39d803c11e5241f46482e127b196776d4dd7633c`.
+
+The runtime now routes the prototype constructor, native store, constructor cache and shared unproxy registry through the same guarded WebRTC constructor and method references. The native implementations remain captured in the runtime closure. Global, prototype, property-descriptor, Reflect, bound-function, subclass and cached-reference construction all apply the configured relay or enforced policy. The guarded native store also retains policy checks for `setConfiguration`, `setLocalDescription`, `restartIce` and `close`.
+
+Guarded functions retain their native display strings in a weak registry consumed by the existing `Function.prototype.toString` hook. Constructor identity, descriptor flags, subclass prototypes, native error types and function strings are checked against an unproxied native control. The test matrix covers off, relay, verified enforced, missing credentials and missing isolation. A real TURN DataChannel created through the prototype constructor exchanges messages before and after ICE restart. The fixture waits up to five seconds for asynchronous native local-candidate statistics before asserting relay candidates.
+
+Evidence root: `/Volumes/1T/scramjet/verification/2026-10-21-constructor/`.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| macOS Chromium complete WebRTC suite | 48/48 | `browser-verified/chromium-udp.log` |
+| macOS Firefox complete WebRTC suite | 44/44 | `firefox-verified/firefox-udp.log` |
+| macOS Playwright WebKit complete WebRTC suite | 44/44 | `browser-verified/webkit-udp.log` |
+| Supervised Linux IPv4 enforced suite | 23/23; 5,500 authorized TURN packets; 0 unauthorized normal packets | `linux-ipv4-verified/` |
+| Supervised Linux IPv6 enforced suite | 23/23; 5,454 authorized TURN packets; 0 unauthorized normal packets | `linux-ipv6-verified/` |
+| Expected-negative direct controls | 15 unauthorized packets detected per run; both expected-negative analyses exited 0 | Both verified Linux directories |
+| Node policy, credential and HTTP-fixture unit tests | 18/18 | `units-precommit.log` |
+| Python runner tests | 5/5 | `python-precommit.log` |
+| Core, declarations and Controller TypeScript | 0 errors | `quality-precommit.log` |
+| Core lint | 0 errors, 169 warnings | `quality-precommit.log` |
+| Node 24 package validation | 5/5 | `package-node24-final.log` |
+| Source, runtime bundle and artifact-manifest readback | All four verified run directories match the tested source and current bundles | `final-readback.json` |
+
+The tested source SHA-256 is `9c39d9b9bd78ebde4af4cfadb2f4ef377978124e115c772f8273b8fc91a8caf3`. Each run records the baseline Git SHA plus the exact source-file and runtime-bundle hashes; the source digest includes this constructor repair. The committed source files preserve those exact bytes. Runs used 120-second TURN credentials, 15-second data soak and 2.5-second media sampling per phase. Chromium/WebKit used the reachable LAN TURN address and Firefox used the route-selected address.
+
+A supplemental full Runway typecheck still reports three diagnostics in unchanged files: `testcommon.ts` (`shouldUpgradeCallback` server option), `fixtures.ts` (server-close callback signature) and `helpers.ts` (`number | void` result). It reports none in the constructor repair files. The diagnostic output is retained in `runway-typecheck-final.log`.
+
+The local constructor-repair matrix is complete. CI for the pushed constructor revision is tracked in [PR #1](https://github.com/tzf1003/scramjet/pull/1). Acceptance covers desktop automation and the supervised Docker/Linux network namespace. Playwright WebKit on macOS does not establish real iOS Safari coverage. Further deployment acceptance covers Windows/Android, physical cameras and microphones and permission flows, independent public peers, public NAT64/VPN/multihoming, production TURN TLS certificates, Firefox/WebKit TLS, hour-scale soak, performance and resource curves. Kernel controls provide the authoritative enforced egress boundary.
