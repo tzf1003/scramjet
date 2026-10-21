@@ -132,6 +132,12 @@ export default [
 					const active = state.receivers.filter((item: any) =>
 						["recvonly", "sendrecv"].includes(item.transceiver.currentDirection)
 					);
+					// Attach newly negotiated tracks after signaling has settled. Linux
+					// WebKit can retain an empty playback source from the ontrack callback.
+					for (const item of active) {
+						if (item.video && item.video.readyState === 0)
+							item.video.srcObject = new MediaStream([item.track]);
+					}
 					let timer: ReturnType<typeof setTimeout>;
 					state.activation = Promise.race([
 						Promise.all([
@@ -152,6 +158,10 @@ export default [
 														muted: item.track.muted,
 														paused: item.media.paused,
 														readyState: item.media.readyState,
+														videoWidth: item.media.videoWidth,
+														videoHeight: item.media.videoHeight,
+														rect: item.media.getBoundingClientRect().toJSON(),
+														mid: item.transceiver.mid,
 													})),
 												})
 										)
@@ -234,7 +244,17 @@ export default [
 					const observed = await peer.evaluate(async (seconds) => {
 						const state = (window as any).__rtcLifecycle;
 						await state.activation;
-						if (state.activationError) throw new Error(state.activationError);
+						if (state.activationError) {
+							const report = await state.pc.getStats();
+							const rtp: any[] = [];
+							report.forEach((stat: any) => {
+								if (["inbound-rtp", "codec"].includes(stat.type))
+									rtp.push(stat);
+							});
+							throw new Error(
+								state.activationError + " RTP: " + JSON.stringify(rtp)
+							);
+						}
 						const active = state.receivers.filter((item: any) =>
 							["recvonly", "sendrecv"].includes(
 								item.transceiver.currentDirection

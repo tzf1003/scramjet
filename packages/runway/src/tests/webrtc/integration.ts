@@ -51,9 +51,17 @@ const test = webrtcTest({
 		const signalUrl = `ws://${targetHost}:${signaling.port}/signal?role=B`;
 
 		const peerA = frame.evaluate(async () => {
+			const timers = new Set<ReturnType<typeof setTimeout>>();
+			const schedule = (callback: () => void, ms: number) => {
+				const timer = setTimeout(() => {
+					timers.delete(timer);
+					callback();
+				}, ms);
+				timers.add(timer);
+			};
 			const tick = (ms: number) => {
 				const done = Promise.withResolvers<void>();
-				setTimeout(done.resolve, ms);
+				schedule(done.resolve, ms);
 				return done.promise;
 			};
 			const digest = async (value: string | Uint8Array) => {
@@ -92,6 +100,16 @@ const test = webrtcTest({
 				iceTransportPolicy: "all",
 			});
 			const channel = pc.createDataChannel("e2e", { ordered: true });
+			(window as any).__webrtcIntegrationCleanup = async () => {
+				for (const timer of timers) clearTimeout(timer);
+				timers.clear();
+				pc.close();
+				ws.close();
+				const deadline = Date.now() + 5000;
+				while (channel.readyState !== "closed" && Date.now() < deadline)
+					await new Promise((resolve) => setTimeout(resolve, 25));
+				return { connection: pc.connectionState, channel: channel.readyState };
+			};
 			const remoteCandidates: RTCIceCandidateInit[] = [];
 			let remoteDescriptionSet = false;
 			const big = `scramjet-big-${"x".repeat(131072)}`;
@@ -229,7 +247,6 @@ const test = webrtcTest({
 					}
 					if (data === "after-restart") {
 						received.afterRestart = true;
-						setTimeout(() => finish(baselineLocal, baselineRemote), 5000);
 						finish(baselineLocal, baselineRemote);
 					}
 				} else if (data instanceof ArrayBuffer) {
@@ -243,7 +260,7 @@ const test = webrtcTest({
 					awaitingRestart = true;
 					pc.restartIce();
 					await sendOffer(true);
-					setTimeout(sendAfterRestart, 15_000);
+					schedule(sendAfterRestart, 15_000);
 				}
 			};
 
@@ -275,7 +292,7 @@ const test = webrtcTest({
 						pc.iceConnectionState === "completed")
 				) {
 					awaitingRestart = false;
-					setTimeout(sendAfterRestart, 300);
+					schedule(sendAfterRestart, 300);
 				}
 			};
 
@@ -333,16 +350,19 @@ const test = webrtcTest({
 					`peer A timed out: ${JSON.stringify({ ...describe(), pairs })}`
 				);
 			});
-			return await Promise.race([done.promise, timeout]).finally(() =>
-				pc.close()
-			);
+			return await Promise.race([done.promise, timeout]);
 		});
 
 		const peerB = ctx.page.evaluate(
 			async ({ url, iceServers }) => {
+				const timers = new Set<ReturnType<typeof setTimeout>>();
 				const tick = (ms: number) => {
 					const done = Promise.withResolvers<void>();
-					setTimeout(done.resolve, ms);
+					const timer = setTimeout(() => {
+						timers.delete(timer);
+						done.resolve();
+					}, ms);
+					timers.add(timer);
 					return done.promise;
 				};
 				const ws = new WebSocket(url);
@@ -365,6 +385,23 @@ const test = webrtcTest({
 				const remoteCandidates: RTCIceCandidateInit[] = [];
 				let remoteDescriptionSet = false;
 				let channel: RTCDataChannel | null = null;
+				(window as any).__webrtcIntegrationCleanup = async () => {
+					for (const timer of timers) clearTimeout(timer);
+					timers.clear();
+					pc.close();
+					ws.close();
+					const deadline = Date.now() + 5000;
+					while (
+						channel &&
+						channel.readyState !== "closed" &&
+						Date.now() < deadline
+					)
+						await new Promise((resolve) => setTimeout(resolve, 25));
+					return {
+						connection: pc.connectionState,
+						channel: channel?.readyState,
+					};
+				};
 				const received = {
 					text: false,
 					binary: false,
@@ -520,14 +557,28 @@ const test = webrtcTest({
 				const timeout = tick(45_000).then(() => {
 					throw new Error(`peer B timed out: ${JSON.stringify(describe())}`);
 				});
-				return await Promise.race([done.promise, timeout]).finally(() =>
-					pc.close()
-				);
+				return await Promise.race([done.promise, timeout]);
 			},
 			{ url: signalUrl, iceServers: config.iceServers }
 		);
 
-		const [a, b] = await Promise.all([peerA, peerB]);
+		const cleanup = async () => {
+			const state = await (window as any).__webrtcIntegrationCleanup?.();
+			delete (window as any).__webrtcIntegrationCleanup;
+			return state;
+		};
+		// Keep both native transports alive until both asynchronous stats snapshots
+		// have completed. Closing either peer earlier can change the other's result.
+		const [a, b] = await Promise.all([peerA, peerB]).finally(async () => {
+			const states = await Promise.all([
+				frame.evaluate(cleanup),
+				ctx.page.evaluate(cleanup),
+			]);
+			for (const state of states) {
+				assert.equal(state?.connection, "closed", "native peer cleanup");
+				assert.equal(state?.channel, "closed", "native channel cleanup");
+			}
+		});
 
 		assert.equal(a.policy, "relay", "A must keep iceTransportPolicy=relay");
 		const aTurnBacked =
