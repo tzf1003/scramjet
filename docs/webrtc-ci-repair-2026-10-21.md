@@ -33,4 +33,8 @@ The four complete browser/Linux runs share source SHA-256 1c400797913ef41ac38a74
 
 At commit 24b3dded, ordinary CI run 39538768600 passed. WebRTC run 39538768686 failed in Firefox/WebKit media, WebKit native-direct prerequisites and the Linux descriptor snapshot. This repair targets those failures; the final CI result is recorded in PR #1 after the pushed revision completes.
 
+At f75b9d08, ordinary CI run 39542543989 passed. WebRTC run 39542543970 passed quality, units, Chromium with the transport matrix, and the complete enforced job (IPv4/IPv6, ACL and supervisor). The Firefox/WebKit jobs stalled in media activation and were manually cancelled to retain diagnostics. Both had already passed their real native-direct positive controls and fail-closed checks. WebKit had completed the first two media phases before the stall.
+
+The follow-up activates only currently receiving tracks and bounds the activation promise to 10 seconds with audio/track playback diagnostics. Linux cross-browser CI starts a PulseAudio null sink so native AudioContexts have an output device. Local targeted Firefox and WebKit lifecycle repeats each passed 1/1 in media-bounded-local/ and media-bounded-webkit/. The complete matrix above retains its original source identity; the follow-up CI is tracked separately in PR #1.
+
 These measurements cover desktop automation and the supervised Linux Docker topology. Physical media devices, real mobile Safari, independent public peers, public NAT64/VPN/multihoming and hour-scale system resource acceptance retain the boundaries documented in webrtc-test-report.md.

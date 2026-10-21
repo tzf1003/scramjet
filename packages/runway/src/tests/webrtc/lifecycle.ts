@@ -99,6 +99,7 @@ export default [
 						document.body.append(video);
 						void video.play().catch(() => {});
 						item.video = video;
+						item.media = video;
 						item.canvas = document.createElement("canvas");
 						item.canvas.width = item.canvas.height = 8;
 					} else {
@@ -107,6 +108,7 @@ export default [
 						playback.autoplay = true;
 						playback.volume = 0;
 						document.body.append(playback);
+						item.media = playback;
 						void playback.play().catch(() => {});
 						state.audio ??= new AudioContext();
 						const source = state.audio.createMediaStreamSource(
@@ -127,18 +129,44 @@ export default [
 				unlock.id = "webrtc-unlock-audio";
 				unlock.textContent = "Start media";
 				unlock.onclick = () => {
-					state.activation = Promise.all([
-						state.audio?.resume(),
-						...Array.from(document.querySelectorAll("audio,video"), (media) =>
-							(media as HTMLMediaElement).play()
-						),
+					const active = state.receivers.filter((item: any) =>
+						["recvonly", "sendrecv"].includes(item.transceiver.currentDirection)
+					);
+					let timer: ReturnType<typeof setTimeout>;
+					state.activation = Promise.race([
+						Promise.all([
+							state.audio?.resume(),
+							...active.map((item: any) => item.media.play()),
+						]),
+						new Promise((_, reject) => {
+							timer = setTimeout(
+								() =>
+									reject(
+										new Error(
+											"media activation timed out: " +
+												JSON.stringify({
+													audioState: state.audio?.state,
+													tracks: active.map((item: any) => ({
+														kind: item.track.kind,
+														trackState: item.track.readyState,
+														muted: item.track.muted,
+														paused: item.media.paused,
+														readyState: item.media.readyState,
+													})),
+												})
+										)
+									),
+								10000
+							);
+						}),
 					])
 						.then(() => {
 							state.activationError = null;
 						})
 						.catch((error) => {
 							state.activationError = String(error);
-						});
+						})
+						.finally(() => clearTimeout(timer));
 				};
 				document.body.append(unlock);
 				if (sender) {

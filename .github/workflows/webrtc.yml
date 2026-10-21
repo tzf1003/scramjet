@@ -158,6 +158,13 @@ jobs:
       - name: Install Playwright ${{ matrix.browser }}
         run: npx playwright install --with-deps ${{ matrix.browser }}
         working-directory: packages/runway
+      - name: Start virtual audio output for native media
+        run: |
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=scramjet_webrtc
+          pactl set-default-sink scramjet_webrtc
+          pactl list short sinks
       - name: Run browser suite and real TURN faults
         run: python3 tests/webrtc/run-browser-suite.py --browser ${{ matrix.browser }} --output tests/webrtc/artifacts/${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
