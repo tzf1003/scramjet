@@ -305,8 +305,14 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 				});
 				if (pairs.length === 0)
 					throw securityError("could not observe a selected candidate pair");
+				let incomplete = false;
 				for (let index = 0; index < pairs.length; index++) {
 					const pair = pairs[index];
+					if (pair.localType === null) {
+						incomplete = true;
+						if (pair.localUrl === null || urlAuthorized(pair.localUrl))
+							continue;
+					}
 					const turnBacked =
 						pair.localType === "relay" ||
 						(pair.localType === "prflx" &&
@@ -325,6 +331,10 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 						return;
 					}
 				}
+				if (incomplete)
+					throw securityError(
+						"selected candidate pair statistics are incomplete"
+					);
 				attempts = 0;
 				log(`selected pairs verified ${JSON_stringify(pairs)}`);
 			} catch (error) {

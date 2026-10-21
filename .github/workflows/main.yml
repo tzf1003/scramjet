@@ -326,6 +326,13 @@ jobs:
           WEBRTC_EXPOSE_HOST_CANDIDATES: "1"
         run: OMIT_WPT=1 python3 tests/webrtc/run-browser-suite.py --browser chromium --filter "" --parallel 1 --output tests/webrtc/artifacts/regression
 
+      - name: Upload Runway regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runway-regression-logs
+          path: tests/webrtc/artifacts/regression/
+
   rewritertests:
     name: Run Rewriter Tests
     runs-on: ubuntu-latest
