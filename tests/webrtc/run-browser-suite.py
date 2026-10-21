@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run real browser suites against a task-owned, disposable Coturn stack."""
 import argparse
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,8 @@ def main():
     parser.add_argument("--filter", default="webrtc-")
     parser.add_argument("--parallel", type=int, default=1)
     parser.add_argument("--transport", choices=["udp", "tcp", "tls"], default="udp")
+    parser.add_argument("--turn-host", type=ipaddress.IPv4Address,
+                        help="Host IPv4 address reachable by the browser; defaults to the current route source")
     args = parser.parse_args()
     if args.parallel != 1:
         parser.error("--parallel must be 1: TURN fault injection owns the shared relay; connection concurrency is tested inside each test")
@@ -35,8 +38,11 @@ def main():
     (output / "source.json").write_text(json.dumps(identity, indent=2) + "\n")
     subprocess.run(["sh", str(ROOT / "tests/webrtc/coturn/generate-certs.sh")],
                    check=True, capture_output=True, text=True)
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
-        route.connect(("1.1.1.1", 53)); host = route.getsockname()[0]
+    if args.turn_host is not None:
+        host = str(args.turn_host)
+    else:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route:
+            route.connect(("1.1.1.1", 53)); host = route.getsockname()[0]
     run_id = "sj-webrtc-" + secrets.token_hex(5)
     env = os.environ.copy()
     url = (f"turns:{host}:15351?transport=tcp" if args.transport == "tls" else f"turn:{host}:13480?transport={args.transport}")
@@ -87,7 +93,7 @@ def main():
             item = {"browser": browser, "transport": args.transport, "exitCode": exit_code,
                     "elapsedSeconds": round(time.monotonic() - started, 2), "log": str(log)}
             print(json.dumps(item), flush=True); results.append(item)
-        (output / "results.json").write_text(json.dumps({"runId": run_id, "image": IMAGE,
+        (output / "results.json").write_text(json.dumps({"runId": run_id, "image": IMAGE, "turnHost": host,
             "gitSha": identity["gitSha"], "sourceSha256": identity["sourceSha256"],
             "credentialTtlSeconds": env["TURN_TTL"], "dataSoakSeconds": os.environ.get("WEBRTC_SOAK_SECONDS", "15"),
             "mediaSecondsPerPhase": os.environ.get("WEBRTC_MEDIA_SOAK_SECONDS", "2.5"), "results": results}, indent=2) + "\n")

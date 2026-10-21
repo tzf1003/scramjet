@@ -2,7 +2,17 @@
 
 验证日期：2026-10-21（Asia/Shanghai）。基线提交：`1750e5f2abd71385d6f597db91304725b8888cd5`，分支：`feat/webrtc-takeover`。
 
-**受控 Linux IPv4/IPv6 严格隔离验收通过；桌面 Chromium、Firefox、Playwright WebKit 的已运行 WebRTC 集合通过。** 真实设备、公网 NAT64/VPN/多网卡和小时级稳定性仍需相应环境验收。此前审计保留在 `webrtc-current-state-audit-2026-10-20.md`；本报告记录修复后的执行结果。
+**受控 Linux IPv4/IPv6 严格隔离验收通过；桌面浏览器结果按运行快照记录。** 10 月 21 日发布前复测 Chromium 29/29、Firefox 25/25；本机 VPN 环境的 WebKit 使用局域网 TURN 后为 23/25，两项原生直连对照超时。此前 WebKit 25/25 的记录保留为历史快照。真实设备、公网 NAT64/VPN/多网卡和小时级稳定性仍需相应环境验收。此前审计保留在 `webrtc-current-state-audit-2026-10-20.md`；本报告记录修复后的执行结果。
+
+### 2026-10-21 发布前复核
+
+当前源码提交 `336a9259` 已重新执行生产构建、声明生成、包校验 5/5，以及 Linux enforced IPv4/IPv6 各 9/9。正向抓包授权 TURN 分别为 5,207 个 IPv4 包和 5,790 个 IPv6 包，未授权包均为 0；直连负向控制分别检出 14/15 包，分析命令均退出 0。此次数据持续传输为 15 秒、媒体每阶段 2.5 秒；120 秒与凭据轮换结果仍引用后文对应历史快照。
+
+本机默认 IPv4 路由选择 VPN 的 `utun` 地址。默认地址下 WebKit 为 15/25；原生、未经过 Scramjet 的双 peer 对照也无法完成 ICE。显式选择局域网 TURN 地址后，真实 TURN UDP/TCP 单项均通过，全集 23/25；剩余两项错误凭据/不可达 TURN 用例在其前置原生直连控制处超时。失败记录继续保留，未把该控制超时解释成隔离通过。`run-browser-suite.py --turn-host <host-LAN-IPv4>` 可显式选择地址，`results.json.turnHost` 记录实际选择；该选项保留主机网络配置。
+
+GitHub 干净环境还发现质量门禁缺少生成的 `rewriter/wasm/out/wasm.js` 及类型。后续 CI 修复提交 `a7ea5c83` 在全量检查前调用既有 rewriter 工具链和构建；重跑质量门禁通过。最终 GitHub 检查状态以 PR 对应提交的检查为准。
+
+新证据：`/Volumes/1T/scramjet/verification/2026-10-21-head-finalization/`，包括 `browser-matrix/`、`webkit-targeted/`、`webkit-tcp/`、`webkit-lan-udp/`、`webkit-lan-full/`、`enforced-ipv4/`、`enforced-ipv6/`、`native-webkit-control.json` 及历史证据哈希对照。以下历史矩阵与上述本次复测分别保留来源。
 
 ## 1. 实际架构与边界
 

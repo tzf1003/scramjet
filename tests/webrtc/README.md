@@ -25,6 +25,7 @@ takeover. The browser tests themselves live in
 Build with the repository's Node/pnpm toolchain and reused dependency cache:
 
 ```sh
+rtk env RELEASE=1 pnpm --dir packages/core run rewriter:build
 rtk node tests/webrtc/check-quality.mjs
 rtk pnpm exec rspack build --mode production
 rtk node --experimental-strip-types --test tests/webrtc/unit/webrtc.test.ts
@@ -38,6 +39,12 @@ restart and allocation observations outside the browser. `--parallel` must be 1;
 concurrent connections are exercised within tests. Direct Runway execution is
 suitable for filters that do not request TURN fault controls. Full WebRTC and
 regression suites use this runner.
+
+The default TURN host is the source address selected by the current IPv4 route.
+When a VPN selects a tunnel address, pass `--turn-host <host-LAN-IPv4>` to use an
+address reachable by the browser and Docker's published TURN/relay ports. The
+runner records the selected address in `results.json`; it preserves the host's
+network configuration.
 
 `check-quality.mjs` requires zero Core/Controller type errors and runs full Core
 lint. Build/declaration errors propagate to the build's exit code. Root tools and
