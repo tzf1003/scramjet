@@ -175,7 +175,9 @@ jobs:
 
   enforced:
     name: Enforced isolation (nftables + namespace)
-    runs-on: ubuntu-latest
+    # The native Chromium sandbox needs unprivileged user namespaces. Ubuntu
+    # 24.04's host AppArmor policy restricts these even in privileged containers.
+    runs-on: ubuntu-22.04
     needs: relay
     steps:
       - uses: actions/checkout@v4
@@ -204,6 +206,14 @@ jobs:
         run: |
           sh tests/webrtc/coturn/generate-certs.sh
           docker build -f tests/webrtc/isolation/Dockerfile -t scramjet-webrtc-linux-verification:local .
+
+      - name: Verify sandbox user namespace support
+        run: |
+          docker run --rm --privileged --network none --entrypoint setpriv \
+            scramjet-webrtc-linux-verification:local \
+            --reuid=65534 --regid=65534 --clear-groups \
+            --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs \
+            unshare --user --map-root-user true
 
       - name: IPv4 enforced browser suite and packet controls
         run: python3 tests/webrtc/isolation/run-linux-suite.py --output tests/webrtc/artifacts/ipv4

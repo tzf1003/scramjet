@@ -221,6 +221,13 @@ boundary is the kernel:
    unsupported sandbox startup fails the run. Plain-HTTP secure-origin exceptions
    are for the local test harness; use HTTPS for deployment.
 
+   Container images share the host kernel and its AppArmor policy. Ubuntu 23.10+
+   may restrict the unprivileged user namespaces needed by Chromium; deployments
+   on these hosts need an AppArmor profile that permits the browser's user
+   namespaces. The enforced-isolation CI job uses an Ubuntu 22.04 host and probes
+   user-namespace creation under the browser's UID and capability restrictions
+   before running the suites.
+
 3. Configure coturn's external address for that namespace:
    `TURN_EXTERNAL_IP=10.200.0.1/<container-ip>`, and include the client's peer
    address in `TURN_ALLOWED_PEER_IP` only for tests.
