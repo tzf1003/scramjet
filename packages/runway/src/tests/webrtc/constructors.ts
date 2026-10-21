@@ -305,21 +305,14 @@ tests.push(
 						message
 					);
 					await expectDataEcho(frame, message);
-					// Native candidate statistics may arrive after the first echo,
-					// especially when Firefox starts a new ICE generation.
-					await frame.waitForFunction(
-						async () => {
-							const stats = await window.__webrtcPeer.pc.getStats();
-							let hasCandidate = false;
-							stats.forEach((stat) => {
-								if (stat.type === "local-candidate") hasCandidate = true;
-							});
-							return hasCandidate;
-						},
-						undefined,
-						{ timeout: 5_000 }
-					);
-					const state = await frame.evaluate(readDataPeer);
+					// Candidate entries can change between native stats snapshots
+					// during ICE restart. Assert the sample that satisfied polling.
+					const deadline = Date.now() + 5_000;
+					let state = await frame.evaluate(readDataPeer);
+					while (state.localTypes.length === 0 && Date.now() < deadline) {
+						await new Promise((resolve) => setTimeout(resolve, 100));
+						state = await frame.evaluate(readDataPeer);
+					}
 					assert.ok(state.localTypes.length > 0);
 					assert.ok(
 						state.localTypes.every(

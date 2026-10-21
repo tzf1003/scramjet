@@ -73,35 +73,57 @@ const tests = [
 				});
 			});
 			assert.deepEqual(policies, ["relay", "relay", "relay", "relay"]);
+			const mapping = await ctx.page.evaluate(() => ({
+				hosts: (window as any).__runwayCleartextHttpsHosts,
+				site: (window as any).__runwayCleartextSite,
+			}));
+			const url = await ctx.page.evaluate(() =>
+				sessionStorage.getItem("__runway_last_test")
+			);
+			assert.ok(url);
 			const opened = ctx.page.waitForEvent("popup");
 			await ctx.page.evaluate(() => {
-				window.open(location.href, "_blank");
+				const harnessUrl = new URL(location.href);
+				harnessUrl.searchParams.set("runwayManualNavigation", "1");
+				window.open(harnessUrl.href, "_blank");
 			});
 			const tab = await opened;
 			const pageErrors: string[] = [];
 			tab.on("pageerror", (error) => pageErrors.push(error.message));
 			tab.on("console", (message) => {
+				if (process.env.RUNWAY_WEBRTC_DEBUG === "1") {
+					console.log(`[webrtc popup ${message.type()}]`, message.text());
+				}
 				if (message.type() === "error") pageErrors.push(message.text());
 			});
 			try {
-				const mapping = await ctx.page.evaluate(() => ({
-					hosts: (window as any).__runwayCleartextHttpsHosts,
-					site: (window as any).__runwayCleartextSite,
-				}));
-				const url = await ctx.page.evaluate(() =>
-					sessionStorage.getItem("__runway_last_test")
-				);
-				assert.ok(url);
 				await tab.waitForLoadState("domcontentloaded");
 				try {
 					await tab.waitForFunction(
 						"typeof window.__runwayNavigate === 'function'"
 					);
 				} catch {
+					const serviceWorker = await tab.evaluate(async () => ({
+						url: location.href,
+						secure: isSecureContext,
+						controller: navigator.serviceWorker?.controller?.scriptURL,
+						registrations: (
+							await navigator.serviceWorker?.getRegistrations()
+						)?.map((registration) => ({
+							scope: registration.scope,
+							active: registration.active?.scriptURL,
+						})),
+					}));
 					throw new Error(
-						`second tab harness failed: ${await tab.locator("#status").textContent()} ${JSON.stringify(pageErrors)}`
+						`second tab harness failed: ${await tab.locator("#status").textContent()} ${JSON.stringify({ pageErrors, serviceWorker })}`
 					);
 				}
+				assert.ok(
+					tab
+						.frames()
+						.every((candidate) => !candidate.url().includes("/~/sj/")),
+					"the new tab must wait for its fixture and policy before navigation"
+				);
 				await tab.evaluate(
 					({ config, url, mapping }) => {
 						(window as any).__runwayCleartextHttpsHosts = mapping.hosts;
@@ -111,7 +133,11 @@ const tests = [
 					},
 					{ config: realmConfig, url, mapping }
 				);
-				const other = await waitForProxiedFrame(tab);
+				const other = await waitForProxiedFrame(tab).catch((error) => {
+					throw new Error(
+						`${error.message}; tab errors=${JSON.stringify(pageErrors)}`
+					);
+				});
 				try {
 					await child.evaluate(initializeDataPeer, {
 						config: { iceTransportPolicy: "all" },

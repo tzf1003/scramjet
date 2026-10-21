@@ -137,9 +137,13 @@
 
 				reloadBtn.addEventListener("click", window.__runwayReload);
 
-				// Auto-navigate to last test on reload
+				// Automated popup tests install their fixture mapping and policy
+				// before navigating. Normal harness reloads restore the last test.
 				const lastTest = sessionStorage.getItem("__runway_last_test");
-				if (lastTest) {
+				const manualNavigation =
+					new URL(location.href).searchParams.get("runwayManualNavigation") ===
+					"1";
+				if (lastTest && !manualNavigation) {
 					console.log("Reloading last test:", lastTest);
 					window.__runwayNavigate(lastTest);
 				}

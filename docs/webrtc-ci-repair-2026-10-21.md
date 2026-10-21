@@ -173,3 +173,32 @@ The tested source SHA-256 is `9c39d9b9bd78ebde4af4cfadb2f4ef377978124e115c772f82
 A supplemental full Runway typecheck still reports three diagnostics in unchanged files: `testcommon.ts` (`shouldUpgradeCallback` server option), `fixtures.ts` (server-close callback signature) and `helpers.ts` (`number | void` result). It reports none in the constructor repair files. The diagnostic output is retained in `runway-typecheck-final.log`.
 
 The local constructor-repair matrix is complete. CI for the pushed constructor revision is tracked in [PR #1](https://github.com/tzf1003/scramjet/pull/1). Acceptance covers desktop automation and the supervised Docker/Linux network namespace. Playwright WebKit on macOS does not establish real iOS Safari coverage. Further deployment acceptance covers Windows/Android, physical cameras and microphones and permission flows, independent public peers, public NAT64/VPN/multihoming, production TURN TLS certificates, Firefox/WebKit TLS, hour-scale soak, performance and resource curves. Kernel controls provide the authoritative enforced egress boundary.
+
+## Native statistics sampling and popup initialization
+
+For commit `4967e6f2097e390e99cd0fc3141acd562f4caeb6`, ordinary push CI `39612182864` and PR CI `39612190568` passed. Push WebRTC run `39612182922` passed all jobs. PR WebRTC run `39612190605` passed quality, units, Chromium, TURN transports and supervised IPv4/IPv6 isolation; Firefox and WebKit each finished 43/44. Firefox failed the constructor ICE-restart candidate assertion, and WebKit timed out loading the second tab's proxied test document. Downloaded diagnostics are retained in `/Volumes/1T/scramjet/verification/2026-10-21-constructor/ci-readback/`.
+
+The constructor regression previously waited for a candidate in one native `getStats()` result, then asserted a second result. ICE restart can change entries between these snapshots. It now polls `readDataPeer()` for up to five seconds and asserts the exact sample that met the readiness condition. Relay candidate types, emitted SDP candidates and real DataChannel echoes before and after restart remain required.
+
+The popup regression now selects the harness's explicit manual-navigation option. It asserts that the ready harness has not navigated a proxied frame, then installs that tab's fixture mapping and WebRTC policy before its first target navigation. This removes concurrent automatic restoration and explicit navigation from the fixture. Normal harness reloads retain automatic restoration. A failed second-tab load includes captured tab errors. The previous CI timeout did not reproduce in the initial local WebKit run, so the diagnosis is based on the startup ordering in the harness rather than a deterministic reproduction of that timeout.
+
+`waitForProxiedFrame()` now passes its timeout as Playwright's third argument. Each readiness attempt is bounded to two seconds or the remaining 20-second deadline. This makes the existing outer deadline effective when the target document does not initialize.
+
+The final local runs identify source SHA-256 `4355c8433a4e4884848a2e0de4ddeae6adefea06387743920cb767d6239eab7f`. Evidence is retained under `/Volumes/1T/scramjet/verification/2026-10-21-tab-lifecycle/`.
+
+| Final sampling and popup check | Result | Evidence |
+| --- | --- | --- |
+| macOS Chromium complete WebRTC suite | 48/48 | `verified-chromium-firefox/chromium-udp.log` |
+| macOS Firefox complete WebRTC suite | 44/44 | `verified-chromium-firefox/firefox-udp.log` |
+| macOS Playwright WebKit complete WebRTC suite | 44/44 | `verified-webkit/webkit-udp.log` |
+| Core, declarations and Controller TypeScript | 0 errors | `quality.log` |
+| Core lint | 0 errors, 169 warnings | `quality.log` |
+| Source, runtime bundle and artifact-manifest readback | Both run directories match; 20 manifest entries checked; 0 mismatches | `final-readback.json` |
+
+These runs used 120-second TURN credentials, 15-second data soak and 2.5-second media sampling per phase. Chromium/Firefox used the route-selected TURN address; WebKit used the current reachable LAN address. The final complete matrix includes native DataChannel exchange, constructor ICE restart, cross-origin/top-level-tab coverage, credential renewal, TURN failure, media lifecycle and selected-candidate fault cases.
+
+Intermediate diagnostics remain in the same evidence root: `final-chromium-firefox/` records the earlier popup initialization attempt failing Firefox service-worker control, and `manual-firefox/` records an initial cross-origin child readiness timeout. The diagnostic repeat and final full matrix passed. These records retain their own source identities and are separate from the final matrix above.
+
+A supplemental scoped Runway TypeScript invocation reports four diagnostics on unchanged statements: the data-URL import in `coverage.ts`, the asynchronous `onServer` return type, the server-close callback in `fixtures.ts`, and the optional port result in `helpers.ts`. The main Core/declaration/Controller quality gate passed. The scoped diagnostics are retained in `runway-typecheck.log`.
+
+The earlier 23/23 IPv4/IPv6 packet-isolation results remain bound to constructor-repair source `9c39d9b9bd78ebde4af4cfadb2f4ef377978124e115c772f8273b8fc91a8caf3`. This follow-up changes browser test fixtures and the test harness. Current-revision Linux isolation and TURN transport CI results are pending; pushing this follow-up will trigger those checks in PR #1. Deployment acceptance retains the physical-device, public-network, additional-platform and soak boundaries listed above.

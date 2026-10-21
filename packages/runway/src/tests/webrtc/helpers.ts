@@ -69,9 +69,11 @@ export async function waitForProxiedFrame(page: Page): Promise<Frame> {
 		const frame = findProxiedFrame(page);
 		if (frame) {
 			try {
-				await frame.waitForFunction("window.__webrtcTestPage === true", {
-					timeout: 2_000,
-				});
+				await frame.waitForFunction(
+					"window.__webrtcTestPage === true",
+					undefined,
+					{ timeout: Math.max(1, Math.min(2_000, deadline - Date.now())) }
+				);
 				return frame;
 			} catch {
 				// The frame exists but the document is still loading.
