@@ -51,6 +51,8 @@ const test = webrtcTest({
 
 		const peerA = frame.evaluate(
 			async ({ pairs, port }) => {
+				const resources: { pc: RTCPeerConnection; ws: WebSocket }[] = [];
+				(window as any).__webrtcConcurrency = resources;
 				const tick = (ms: number) => {
 					const done = Promise.withResolvers<void>();
 					setTimeout(done.resolve, ms);
@@ -81,6 +83,7 @@ const test = webrtcTest({
 						],
 						iceTransportPolicy: "all",
 					});
+					resources.push({ pc, ws });
 					const labels = [
 						`ordered-${index}`,
 						`unordered-${index}`,
@@ -227,9 +230,7 @@ const test = webrtcTest({
 							`A${index} timed out: ${pc.connectionState}/${pc.iceConnectionState} echoes=${echoes.size}`
 						);
 					});
-					return await Promise.race([pairDone.promise, timeout]).finally(() =>
-						pc.close()
-					);
+					return await Promise.race([pairDone.promise, timeout]);
 				}
 
 				return Promise.all(
@@ -241,6 +242,8 @@ const test = webrtcTest({
 
 		const peerB = ctx.page.evaluate(
 			async ({ pairs, url, port, iceServers }) => {
+				const resources: { pc: RTCPeerConnection; ws: WebSocket }[] = [];
+				(window as any).__webrtcConcurrency = resources;
 				const tick = (ms: number) => {
 					const done = Promise.withResolvers<void>();
 					setTimeout(done.resolve, ms);
@@ -265,6 +268,7 @@ const test = webrtcTest({
 						iceServers,
 						iceTransportPolicy: "relay",
 					});
+					resources.push({ pc, ws });
 					const channels = new Map<string, RTCDataChannel>();
 					const pairDone = Promise.withResolvers<{
 						remoteType: string | null;
@@ -383,9 +387,7 @@ const test = webrtcTest({
 							`B${index} timed out: ${pc.connectionState}/${pc.iceConnectionState} channels=${channels.size}`
 						);
 					});
-					return await Promise.race([pairDone.promise, timeout]).finally(() =>
-						pc.close()
-					);
+					return await Promise.race([pairDone.promise, timeout]);
 				}
 
 				return Promise.all(
@@ -400,7 +402,28 @@ const test = webrtcTest({
 			}
 		);
 
-		const [pairsA, pairsB] = await Promise.all([peerA, peerB]);
+		// Both peers must finish receiving and sampling stats before either closes.
+		// An echo sender finishing first does not mean its SCTP queue has drained.
+		const results = await Promise.allSettled([peerA, peerB]);
+		await Promise.all(
+			[frame, ctx.page].map((page) =>
+				page.evaluate(() => {
+					const resources = (window as any).__webrtcConcurrency as
+						| { pc: RTCPeerConnection; ws: WebSocket }[]
+						| undefined;
+					for (const resource of resources ?? []) {
+						resource.pc.close();
+						resource.ws.close();
+					}
+					delete (window as any).__webrtcConcurrency;
+				})
+			)
+		);
+		const [resultA, resultB] = results;
+		if (resultA.status === "rejected") throw resultA.reason;
+		if (resultB.status === "rejected") throw resultB.reason;
+		const pairsA = resultA.value;
+		const pairsB = resultB.value;
 		for (let index = 0; index < PAIRS; index += 1) {
 			const a = pairsA[index];
 			const b = pairsB[index];

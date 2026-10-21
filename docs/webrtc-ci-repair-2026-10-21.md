@@ -110,3 +110,35 @@ The policy snapshot now clones and freezes the normalized WebRTC configuration, 
 | Policy-loss supervisor fault cases | 2/2; browser terminated and namespace removed | security-supervisor-2/ |
 
 The first macOS WebKit run used the default route-selected TURN address and timed out on relay gathering and direct-connect prerequisites. Repeating the same suite against the reachable LAN TURN address completed 38/38; this records the route-specific local environment result and does not alter the platform acceptance scope above. The WebKit result is Playwright WebKit on macOS, not physical iOS Safari. Full run records, browser output, packet captures and supervisor receipts are in `/Volumes/1T/scramjet/verification/2026-10-21-ci-repair/`.
+
+## Bounded runner execution and coordinated fixture teardown
+
+Date: 2026-10-21. Repair baseline: `f042b859d448496da1713fce5ececee0b22a78d5`.
+
+Concurrent native peers now retain their PeerConnections and signaling WebSockets until both peers' receive and statistics results settle, then close the resources together. HTTP fixture teardown calls `server.close` and closes open or unfinished requests; the WebRTC fixture completes that teardown even when its stop hook fails. Opt-in `RUNWAY_PROGRESS=1` logs identify worker, test and lifecycle stage, and both browser runners enable them.
+
+The Python runner launches the test in an owned process session and bounds idle time and total runtime. A timeout returns exit code 124 and writes a `*.watchdog.json` diagnostic containing the reason, elapsed and idle time, limits, process ID and log name. Teardown sends TERM and then KILL to the owned process session, including surviving descendants. TURN and network control commands have bounded execution, and teardown preserves the control-action record.
+
+The default allowance is `max(WEBRTC_SOAK_SECONDS, 10 * WEBRTC_MEDIA_SOAK_SECONDS)`. The idle limit is `300 + allowance` seconds and the total limit is `1800 + 2 * allowance` seconds. `WEBRTC_RUN_IDLE_TIMEOUT_SECONDS` and `WEBRTC_RUN_TIMEOUT_SECONDS` override those limits. Soak durations, timeouts and the termination grace period must be finite positive values. WebRTC CI runs the HTTP-fixture disposal and Python watchdog regressions.
+
+The current local source SHA-256 is `ebe6ed72074197be4f0d28ebdc9aeb3d9271cd87405acd393150411c3a98f395`. Evidence is under `/Volumes/1T/scramjet/verification/2026-10-21-ci-repair/runner-watchdog/`.
+
+| Local check | Result | Evidence |
+| --- | --- | --- |
+| Node unit tests | 18/18 | Retained unit-test output |
+| Python runner tests | 5/5 | Retained runner-test output |
+| Core, declarations and Controller TypeScript | 0 errors | Retained quality output |
+| Core lint | 0 errors, 168 warnings | Retained quality output |
+| macOS Chromium WebRTC suite | 42/42 | `chromium-final/` |
+| macOS Firefox WebRTC suite | 38/38 | `firefox-final/` |
+| macOS Playwright WebKit WebRTC suite | 38/38 | `webkit-current-lan/` |
+| Supervised Linux IPv4 enforced suite | 22/22; 6,258 TURN packets; 0 unauthorized normal packets | `linux-ipv4-final/` |
+| Supervised Linux IPv6 enforced suite | 22/22; 5,564 TURN packets; 0 unauthorized normal packets | `linux-ipv6-final/` |
+| Expected-negative direct controls | 15 unauthorized packets detected for IPv4 and 16 for IPv6; both analyses exited 0 | Both final Linux evidence directories |
+| Manifest and runtime-bundle readback | All five manifests and runtime-bundle hashes match the current artifacts | `local-manifest-readback.json` |
+
+The runs used 15-second data soak, 2.5-second media sampling per phase and 120-second TURN credentials. Their recorded source identities match the digest above.
+
+An earlier WebKit run in `webkit-final/` used a previously valid LAN address after the interface changed. Relay candidate gathering was unavailable, and the run was manually interrupted with exit code 130. Full-suite WebKit coverage is the completed 38/38 repeat in `webkit-current-lan/`; the interrupted run remains a diagnostic audit record.
+
+These are local results for the current source. CI results for the upcoming repair commit will be recorded after the pushed revision completes. Acceptance covers desktop automation and the supervised Docker network namespace. Real iOS Safari, Windows, Android, physical devices and permission flows, independent public peers, NAT64/VPN/multihoming, trusted TURN TLS, Firefox/WebKit TLS and hour-scale soak, performance and resource curves require deployment evidence.

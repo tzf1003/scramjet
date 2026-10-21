@@ -868,6 +868,11 @@ async function main() {
 	};
 
 	const runTestsForWorker = async (workerId: number, workerTests: Test[]) => {
+		const progress = (test: string, phase: string) => {
+			if (process.env.RUNWAY_PROGRESS === "1") {
+				console.log(`[Runway worker=${workerId} test=${test} phase=${phase}]`);
+			}
+		};
 		let consistencyHandler: (
 			source: HarnessKind,
 			label: string,
@@ -902,6 +907,7 @@ async function main() {
 		let needsReload = true;
 
 		for (const test of workerTests) {
+			progress(test.name, "prepare");
 			const runBareForTest = runBareTests && !test.scramjetOnly;
 			const consistencyTracker = createConsistencyTracker(runBareForTest);
 			consistencyHandler = consistencyTracker.handle;
@@ -915,6 +921,7 @@ async function main() {
 			let started = false;
 			try {
 				if (test.directFn) {
+					progress(test.name, "direct");
 					await test.directFn();
 					result = { status: "pass" };
 				} else {
@@ -957,6 +964,7 @@ async function main() {
 							serverResultResolve = resolve;
 						});
 					}
+					progress(test.name, "start");
 					await test.start({
 						pass: async (message?: string, details?: any) =>
 							serverResultResolve({ status: "pass", message, details }),
@@ -964,6 +972,7 @@ async function main() {
 							serverResultResolve({ status: "fail", message, details }),
 					});
 					started = true;
+					progress(test.name, "run");
 
 					const scramjetPromise = runTestOnHarness(
 						testPages.scramjet.page,
@@ -1037,6 +1046,7 @@ async function main() {
 				};
 			} finally {
 				if (!test.directFn && started) {
+					progress(test.name, "stop");
 					try {
 						await test.stop();
 					} catch (error) {
@@ -1095,6 +1105,7 @@ async function main() {
 		}
 
 		if (testPages) {
+			progress("worker", "cleanup");
 			await Promise.all([
 				testPages.scramjet.cleanup(),
 				testPages.bare?.cleanup(),
@@ -1111,6 +1122,8 @@ async function main() {
 	await Promise.all(
 		workerBuckets.map((bucket, index) => runTestsForWorker(index + 1, bucket))
 	);
+	if (process.env.RUNWAY_PROGRESS === "1")
+		console.log("[Runway phase=browser-close]");
 	await browser?.close();
 
 	if (coverageEnabled && needsHarness) {

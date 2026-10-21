@@ -86,7 +86,7 @@ def main():
                    TURN_CLIENT_RELAY_RANGE="1",
                    MASQUERADE="1", SCRAMJET_EXTRA_TCP_PORTS="18081,18083", WEBRTC_SIGNAL_PORT="18083",
                    PLAYWRIGHT_CHROMIUM_EXECUTABLE=executable, PLAYWRIGHT_BROWSERS_PATH="/ms-playwright",
-                   WEBRTC_FAKE_MEDIA="1", EVIDENCE_DIR=str(output), PYTHONDONTWRITEBYTECODE="1",
+                   WEBRTC_FAKE_MEDIA="1", RUNWAY_PROGRESS="1", EVIDENCE_DIR=str(output), PYTHONDONTWRITEBYTECODE="1",
                    WEBRTC_TURN_CONTROL_DIR=str(output),
                    TURN_CREDENTIALS_URL="http://10.200.0.1:18081/turn-credentials")
         for key in ("WEBRTC_SOAK_SECONDS", "WEBRTC_MEDIA_SOAK_SECONDS"):

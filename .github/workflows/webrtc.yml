@@ -53,6 +53,10 @@ jobs:
       - run: node tests/webrtc/check-quality.mjs
       - name: Credential service tests
         run: node --test tests/webrtc/unit/credentials.test.mjs
+      - name: Runner disposal and watchdog regression tests
+        run: |
+          node --experimental-strip-types --test tests/webrtc/unit/http-fixture.test.ts
+          python3 -m unittest discover -s tests/webrtc/unit -p 'test_*.py'
       - name: Isolation fault injection
         run: docker run --rm --cap-add NET_ADMIN -v "$PWD/tests/webrtc/isolation:/isolation:ro" nicolaka/netshoot python3 /isolation/regression.py
 

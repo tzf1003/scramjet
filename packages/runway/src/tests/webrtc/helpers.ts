@@ -2,6 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Frame, Page } from "playwright";
 import { setTimeout as sleep } from "node:timers/promises";
+import { stopHttpFixture } from "../../http-fixture.ts";
 import {
 	runwayTestTargetUrl,
 	type Test,
@@ -143,10 +144,11 @@ export function webrtcTest(options: WebrtcTestOptions): Test {
 			await options.prepare?.();
 		},
 		async stop() {
-			await options.onStop?.();
-			const { promise, resolve } = Promise.withResolvers<void>();
-			server.close(() => resolve());
-			await promise;
+			try {
+				await options.onStop?.();
+			} finally {
+				await stopHttpFixture(server);
+			}
 		},
 		async playwrightFn(ctx: TestContext) {
 			if (process.env.RUNWAY_WEBRTC_DEBUG === "1") {

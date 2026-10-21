@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import { stopHttpFixture } from "../../http-fixture.ts";
 import type { AddressInfo } from "node:net";
 import { webrtcPageHtml, webrtcTest } from "./helpers.ts";
 import { fetchTurnCredentials } from "./fixtures.ts";
@@ -324,9 +325,7 @@ tests.push(
 			refreshConfig.iceServersExpiresAt = Date.now() + 4000;
 		},
 		async onStop() {
-			await new Promise<void>((resolve) =>
-				credentialServer.close(() => resolve())
-			);
+			await stopHttpFixture(credentialServer);
 		},
 		async fn(_ctx, frame) {
 			const before = refreshHits;
