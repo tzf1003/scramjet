@@ -80,6 +80,7 @@ def main():
         for browser in args.browser or ["chromium", "firefox", "webkit"]:
             test_env = dict(os.environ, TURN_CREDENTIALS_URL="http://127.0.0.1:18082/turn-credentials",
                             RUNWAY_BROWSER=browser, WEBRTC_FAKE_MEDIA="1", WEBRTC_EXPOSE_HOST_CANDIDATES="1",
+                            WEBRTC_DIRECT_HOST=host,
                             WEBRTC_INSECURE_TLS="1" if args.transport == "tls" else "0", WEBRTC_RUN_ID=run_id,
                             WEBRTC_EVIDENCE_DIR=str(output), WEBRTC_TURN_CONTROL_DIR=str(output))
             started = time.monotonic()

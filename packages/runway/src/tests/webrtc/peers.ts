@@ -1,4 +1,5 @@
 import type { Frame, Page } from "playwright";
+import { isIP } from "node:net";
 
 type Endpoint = Frame | Page;
 type PeerState = {
@@ -91,17 +92,31 @@ export async function peerDescription({
 export async function negotiateDataPeers(
 	a: Endpoint,
 	b: Endpoint,
-	restart = false
+	restart = false,
+	directHost?: string
 ) {
+	if (directHost && isIP(directHost) !== 4)
+		throw new Error("direct-control host must be an IPv4 address");
+	const forRemote = (description: RTCSessionDescriptionInit) => ({
+		...description,
+		// Both fixture peers run on this host. Resolve their mDNS candidates
+		// in signaling using the runner's explicit interface address.
+		sdp: directHost
+			? description.sdp?.replace(
+					/^(a=candidate:\S+\s+\d+\s+\S+\s+\d+\s+)\S+\.local(?=\s)/gm,
+					(_, prefix: string) => prefix + directHost
+				)
+			: description.sdp,
+	});
 	const offer = await a.evaluate(peerDescription, { offer: true, restart });
 	await b.evaluate(
 		(sdp) => window.__webrtcPeer.pc.setRemoteDescription(sdp),
-		offer.description
+		forRemote(offer.description)
 	);
 	const answer = await b.evaluate(peerDescription, { offer: false });
 	await a.evaluate(
 		(sdp) => window.__webrtcPeer.pc.setRemoteDescription(sdp),
-		answer.description
+		forRemote(answer.description)
 	);
 	return { offer, answer };
 }

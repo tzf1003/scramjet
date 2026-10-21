@@ -57,6 +57,7 @@ export default [
 					resources: [],
 					tracks: [],
 					receivers: [],
+					audioNodes: [],
 				};
 				(window as any).__rtcLifecycle = state;
 				const channel = (dc: RTCDataChannel) => {
@@ -92,6 +93,8 @@ export default [
 						video.muted = true;
 						video.autoplay = true;
 						video.playsInline = true;
+						video.width = 160;
+						video.height = 120;
 						video.srcObject = new MediaStream([event.track]);
 						document.body.append(video);
 						void video.play().catch(() => {});
@@ -116,6 +119,7 @@ export default [
 						mute.gain.value = 0;
 						item.analyser.connect(mute);
 						mute.connect(state.audio.destination);
+						state.audioNodes.push(source, item.analyser, mute);
 					}
 					state.receivers.push(item);
 				};
@@ -123,9 +127,18 @@ export default [
 				unlock.id = "webrtc-unlock-audio";
 				unlock.textContent = "Start media";
 				unlock.onclick = () => {
-					void state.audio?.resume();
-					for (const media of document.querySelectorAll("audio,video"))
-						void (media as HTMLMediaElement).play().catch(() => {});
+					state.activation = Promise.all([
+						state.audio?.resume(),
+						...Array.from(document.querySelectorAll("audio,video"), (media) =>
+							(media as HTMLMediaElement).play()
+						),
+					])
+						.then(() => {
+							state.activationError = null;
+						})
+						.catch((error) => {
+							state.activationError = String(error);
+						});
 				};
 				document.body.append(unlock);
 				if (sender) {
@@ -151,6 +164,7 @@ export default [
 					oscillator.start();
 					state.audio = audio;
 					state.oscillator = oscillator;
+					state.audioNodes.push(oscillator, destination);
 					state.streams.push(video, destination.stream);
 					for (const stream of state.streams)
 						for (const track of stream.getTracks())
@@ -168,6 +182,13 @@ export default [
 					sender: true,
 				});
 				await frame.locator("#webrtc-unlock-audio").click();
+				await frame.evaluate(async () => {
+					const state = (window as any).__rtcLifecycle;
+					await state.activation;
+					if (state.activationError) throw new Error(state.activationError);
+					if (state.audio.state !== "running")
+						throw new Error(`sender audio is ${state.audio.state}`);
+				});
 				const mediaSeconds = Number(
 					process.env.WEBRTC_MEDIA_SOAK_SECONDS ?? 2.5
 				);
@@ -180,9 +201,12 @@ export default [
 					audio: number;
 					video: number;
 				}) => {
+					await peer.bringToFront();
 					await peer.locator("#webrtc-unlock-audio").click();
 					const observed = await peer.evaluate(async (seconds) => {
 						const state = (window as any).__rtcLifecycle;
+						await state.activation;
+						if (state.activationError) throw new Error(state.activationError);
 						const active = state.receivers.filter((item: any) =>
 							["recvonly", "sendrecv"].includes(
 								item.transceiver.currentDirection
@@ -377,6 +401,7 @@ export default [
 					const state = (window as any).__rtcLifecycle;
 					const audio = state.audio.createMediaStreamDestination();
 					state.oscillator.connect(audio);
+					state.audioNodes.push(audio);
 					state.streams.push(audio.stream);
 					state.pc.addTrack(audio.stream.getAudioTracks()[0], audio.stream);
 					const extra = state.canvas.captureStream(15);

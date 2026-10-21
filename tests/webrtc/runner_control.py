@@ -6,6 +6,30 @@ import re
 import time
 
 
+def owned_relay_sockets(turn, relay_range):
+    # Coturn may close an allocation between enumerating and resolving FDs.
+    # Ignore only descriptors that disappeared; fail on a live unreadable FD.
+    inspect = r'''
+set -eu
+ls /proc/1/fd >/dev/null
+for fd in /proc/1/fd/*; do
+    if target=$(readlink "$fd" 2>/dev/null); then
+        printf '%s\n' "$target"
+    elif [ -L "$fd" ]; then
+        printf 'Cannot read live Coturn descriptor %s\n' "$fd" >&2
+        exit 1
+    fi
+done
+'''
+    prefix = ["docker", "exec", "--privileged", "-u", "0", turn]
+    fds = subprocess.check_output([*prefix, "sh", "-c", inspect], text=True, stderr=subprocess.STDOUT)
+    inodes = set(re.findall(r"socket:\[(\d+)\]", fds))
+    udp = subprocess.check_output([*prefix, "cat", "/proc/net/udp", "/proc/net/udp6"], text=True, stderr=subprocess.STDOUT)
+    return sorted({parts[9] for line in udp.splitlines()
+                   if len(parts := line.split()) > 9 and parts[9] in inodes and
+                   relay_range[0] <= int(parts[1].split(":")[-1], 16) <= relay_range[1]})
+
+
 def run_controlled(args, *, output, turn, stream, relay_range=(50160, 50200), network_exec=None, interface="sjveth1", **kwargs):
     output = Path(output)
     request = output / "turn-request.json"
@@ -63,14 +87,11 @@ def run_controlled(args, *, output, turn, stream, relay_range=(50160, 50200), ne
                         result = {"id": previous, "ok": False, "error": str(error)}
                 elif action == "snapshot":
                     try:
-                        fds = subprocess.check_output(["docker", "exec", "--privileged", "-u", "0", turn, "ls", "-l", "/proc/1/fd"], text=True, stderr=subprocess.STDOUT)
-                        inodes = set(re.findall(r"socket:\[(\d+)\]", fds))
-                        udp = subprocess.check_output(["docker", "exec", "--privileged", "-u", "0", turn, "cat", "/proc/net/udp", "/proc/net/udp6"], text=True, stderr=subprocess.STDOUT)
-                        allocated = sorted({line.split()[9] for line in udp.splitlines() if len(line.split()) > 9 and line.split()[9] in inodes and
-                                            relay_range[0] <= int(line.split()[1].split(":")[-1], 16) <= relay_range[1]})
+                        allocated = owned_relay_sockets(turn, relay_range)
                         result = {"id": previous, "action": action, "ok": True, "ownedRelaySockets": len(allocated), "relaySocketIds": allocated, "at": time.time()}
                     except subprocess.CalledProcessError as error:
-                        result = {"id": previous, "ok": False, "error": str(error)}
+                        result = {"id": previous, "ok": False, "error": str(error),
+                                  "diagnostic": (error.output or "")[-2000:]}
                 elif action not in ("pause", "unpause", "restart"):
                     result = {"id": previous, "ok": False, "error": "unsupported TURN test action"}
                 else:

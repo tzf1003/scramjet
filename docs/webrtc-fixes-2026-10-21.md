@@ -40,6 +40,8 @@
 
 完整命令、运行目录、实际测量和限制见 `webrtc-test-report.md`。源码修复、实测通过与环境尚未提供的证明在报告中分别列出。
 
+后续 CI 稳定性修复与完整复验见 [webrtc-ci-repair-2026-10-21.md](webrtc-ci-repair-2026-10-21.md)：三浏览器 29/25/25、Linux 双栈各 9/9，实际媒体和直连对照均通过；正常抓包未授权包为 0，负向对照各检测 15 包。
+
 ## 部署使用要求
 
 1. 在可信 Controller 上配置模式、授权 TURN 和短期凭据 endpoint，等待 Controller ready 后创建 frame。

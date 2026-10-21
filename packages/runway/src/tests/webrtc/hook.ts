@@ -24,31 +24,43 @@ const verifyFailure: Parameters<typeof webrtcTest>[0]["fn"] = async (
 	const nativeA = await ctx.page.context().newPage();
 	const nativeB = await ctx.page.context().newPage();
 	try {
+		const directConfig = { iceServers: [] };
+		const directHost = process.env.WEBRTC_DIRECT_HOST;
+		const health = new URL(
+			"/healthz",
+			process.env.TURN_CREDENTIALS_URL ?? "http://127.0.0.1:18081"
+		).href;
+		await Promise.all([nativeA.goto(health), nativeB.goto(health)]);
 		// Prove this topology can expose a missing hook before testing denial.
 		await nativeA.evaluate(initializeDataPeer, {
-			config: { iceServers: [] },
+			config: directConfig,
 			sender: true,
 		});
 		await nativeB.evaluate(initializeDataPeer, {
-			config: { iceServers: [] },
+			config: directConfig,
 			sender: false,
 		});
-		await negotiateDataPeers(nativeA, nativeB);
+		await negotiateDataPeers(nativeA, nativeB, false, directHost);
 		await expectDataEcho(nativeA);
 		await closeDataPeers(nativeA, nativeB);
 		await frame.evaluate(initializeDataPeer, {
 			config: {
-				iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+				iceServers: directConfig.iceServers,
 				iceTransportPolicy: "all",
 			},
 			sender: true,
 		});
 		await nativeB.evaluate(initializeDataPeer, {
-			config: { iceServers: [] },
+			config: directConfig,
 			sender: false,
 		});
 		for (const restart of [false, true]) {
-			const { offer } = await negotiateDataPeers(frame, nativeB, restart);
+			const { offer } = await negotiateDataPeers(
+				frame,
+				nativeB,
+				restart,
+				directHost
+			);
 			assert.match(offer.description.sdp!, /^m=application/m);
 			assert.notEqual(
 				offer.gathering,
@@ -90,7 +102,9 @@ export default [
 		async fn(ctx, frame) {
 			await assert.rejects(
 				() => verifyFailure(ctx, frame),
-				/unreachable TURN must never connect|notStrictEqual|host/
+				(error: unknown) =>
+					error instanceof assert.AssertionError &&
+					error.message.includes("unreachable TURN must never connect")
 			);
 		},
 	}),
