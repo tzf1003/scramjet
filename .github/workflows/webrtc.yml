@@ -40,6 +40,16 @@ jobs:
           node-version: "24"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+      - name: Generate rewriter WASM and TypeScript bindings
+        env:
+          RELEASE: "1"
+        run: pnpm --dir packages/core run rewriter:build
       - run: node tests/webrtc/check-quality.mjs
       - name: Credential service tests
         run: node --test tests/webrtc/unit/credentials.test.mjs
