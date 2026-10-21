@@ -135,8 +135,8 @@ export default [
 					// Attach newly negotiated tracks after signaling has settled. Linux
 					// WebKit can retain an empty playback source from the ontrack callback.
 					for (const item of active) {
-						if (item.video && item.video.readyState === 0)
-							item.video.srcObject = new MediaStream([item.track]);
+						if (item.media.readyState === 0)
+							item.media.srcObject = new MediaStream([item.track]);
 					}
 					let timer: ReturnType<typeof setTimeout>;
 					state.activation = Promise.race([
@@ -460,7 +460,35 @@ export default [
 					});
 				});
 				await negotiate();
+				await peer.evaluate(() => {
+					const state = (window as any).__rtcLifecycle;
+					const audio = state.receivers.find(
+						(item: any) =>
+							item.track.kind === "audio" &&
+							["recvonly", "sendrecv"].includes(
+								item.transceiver.currentDirection
+							)
+					);
+					// Exercise recovery of an empty playback source for a live native track.
+					audio.media.srcObject = new MediaStream();
+				});
 				await verifyMedia({ audio: 1, video: 2 });
+				assert.equal(
+					await peer.evaluate(() => {
+						const state = (window as any).__rtcLifecycle;
+						return state.receivers
+							.filter((item: any) =>
+								["recvonly", "sendrecv"].includes(
+									item.transceiver.currentDirection
+								)
+							)
+							.every((item: any) =>
+								item.media.srcObject.getTracks().includes(item.track)
+							);
+					}),
+					true,
+					"active playback must retain its native receiving track"
+				);
 				await frame.evaluate(() => {
 					const state = (window as any).__rtcLifecycle;
 					state.channels.initial.close();

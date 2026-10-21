@@ -60,3 +60,21 @@ Native browser regressions establish an authorized TURN DataChannel and exchange
 Final local verification of the statistics repair: Ubuntu 24.04 arm64 Chromium 40/40, Firefox 36/36 and WebKit 36/36; supervised Linux IPv4/IPv6 each 20/20. Normal packet analysis recorded 5,354/5,722 authorized TURN packets and zero unauthorized packets, with 15 direct-control packets detected in each family. Policy and credential unit tests passed 16/16. Core, declarations and Controller TypeScript checks passed; Core lint reported zero errors and 168 warnings. Production bundles built successfully. A supplemental isolated Runway typecheck reached an existing fixtures.ts callback-signature diagnostic and reported none in verification.ts.
 
 Evidence is in stats-final-linux-chromium/, stats-final-linux-webkit/, stats-final-linux-firefox-ready/, stats-final-linux-ipv4/ and stats-final-linux-ipv6/. All five manifests match their hashes and all runtime bundle hashes match current artifacts. Chromium, WebKit and both isolation runs identify source 6ab81eb695f4dab4e933618a1b1e8471594ff0198a6328dd11a13a0b8d257fdd; the final Firefox run identifies c2771a742bdeeb1ed3de888a4f876a62fe2fc50bfbdfa6ab6ace17518f4eb724. The sole difference between those source sets is the general CI regression-artifact upload step. The initial Firefox full run started before PulseAudio initialization completed and failed sender audio activation; the complete repeat after audio readiness passed. Local runs used 15-second data soak, 2.5-second media sampling per phase and 3,600-second credentials.
+
+## Audio playback source recovery
+
+At commit 85692d62, both ordinary CI runs passed: PR run 39551126503 and push run 39551121034. Their retained Runway evidence reports 562 passed, 139 expected failures and 6 expected errors, with unexpected=0. PR WebRTC run 39551126411 passed Chromium 40/40, Firefox 36/36, WebKit 36/36, all three TURN transports and supervised IPv4/IPv6 20/20 each. The separate push WebRTC run 39551120973 finished WebKit 35/36; its sole failing case was the media/channel lifecycle.
+
+The failing WebKit audio track was live and unmuted, with growing inbound RTP packets and energy and a running AudioContext, while its playback element remained at HAVE_NOTHING. The lifecycle fixture now extends its negotiation-settled MediaStream rebinding to active audio and video elements at HAVE_NOTHING. A regression deliberately assigns an empty playback stream to the newly receiving audio track and requires recovery to the actual native track. Growing per-track RTP, received audio RMS, changing video pixels, DataChannel exchange and teardown assertions remain in place.
+
+The deterministic regression failed 0/1 before the audio rebinding change and passed 1/1 afterward. That reproduces the playback-source manifestation and validates recovery; it does not establish the cause of WebKit's internal state. Evidence is in media-audio-binding-negative/ and media-audio-binding-positive/.
+
+| Final audio-fixture check | Result | Evidence |
+| --- | --- | --- |
+| Ubuntu 24.04 arm64 Playwright WebKit, complete WebRTC suite | 36/36 | audio-final-webkit/ |
+| Ubuntu 24.04 arm64 Firefox media/channel lifecycle | 1/1 | audio-final-firefox/ |
+| Ubuntu 24.04 arm64 Chromium media/channel lifecycle | 1/1 | audio-final-chromium/ |
+| Supervised Linux IPv4 media/channel lifecycle | 1/1; 874 authorized TURN packets; 0 unauthorized normal packets | audio-final-ipv4/ |
+| Supervised Linux IPv6 media/channel lifecycle | 1/1; 882 authorized TURN packets; 0 unauthorized normal packets | audio-final-ipv6/ |
+
+The five final runs identify source SHA-256 80cbf358424428c2937812e03874e7a10d7c84b233685a470f5cf8d4dca2429f. Their manifests and runtime bundle hashes were read back with zero mismatches. Both packet analyses and expected-negative direct controls exited successfully. They used 3,600-second credentials and 2.5-second media sampling per phase. The complete Chromium/Firefox and 20/20 isolation matrices in the preceding section remain tied to their recorded statistics-repair source; the final fixture revision has the targeted coverage listed here. CI results for the pushed fixture revision are recorded in PR #1 after completion.
