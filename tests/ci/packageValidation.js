@@ -6,7 +6,7 @@
 
 import test from "ava";
 import { glob } from "glob";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 /**
  * Expected distribution files for Scramjet's bundles.
@@ -115,4 +115,34 @@ test("Package structure is valid for distribution", async (t) => {
 	t.true(hasJsFiles, "Distribution should contain JS files");
 	t.true(hasWasmFile, "Distribution should contain WASM file");
 	t.true(hasTypeFiles, "Library should contain core type definition files");
+});
+
+test("Packaged rewriter initializes and rewrites a global", async (t) => {
+	const { defaultConfig, setWasm, rewriteJs } = await import(
+		new URL("../../packages/core/dist/scramjet.mjs", import.meta.url)
+	);
+	setWasm(
+		readFileSync(
+			new URL("../../packages/core/dist/scramjet.wasm", import.meta.url)
+		)
+	);
+	const config = {
+		...defaultConfig,
+		flags: { ...defaultConfig.flags, allowInvalidJs: false, sourcemaps: false },
+	};
+	const output = rewriteJs(
+		"location.href;",
+		"https://target.test/probe.js",
+		{
+			config,
+			prefix: new URL("https://proxy.test/service/"),
+			interface: { codecEncode: encodeURIComponent },
+		},
+		{
+			origin: new URL("https://target.test"),
+			base: new URL("https://target.test/"),
+		}
+	);
+	t.is(typeof output, "string");
+	t.true(output.includes(`${config.globals.wrapfn}(location)`));
 });

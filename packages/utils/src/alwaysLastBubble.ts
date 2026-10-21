@@ -99,7 +99,8 @@ export function setupAlwaysLastBubble(
 			"EventTarget.prototype.addEventListener",
 			target,
 			eventName,
-			(e: T) => {
+			(event: Event) => {
+				const e = event as T;
 				let lastlistener;
 				const path = e.composedPath();
 
@@ -120,7 +121,7 @@ export function setupAlwaysLastBubble(
 				} else {
 					// we know what the last listener is. run this to inject after it
 					lastlistener.injectafter = (e) => {
-						callListener(e);
+						callListener(e as T);
 					};
 				}
 

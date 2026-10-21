@@ -1,3 +1,4 @@
+import { NativeUint8Array } from "@/shared/snapshot";
 // NOTE: this is the entrypoint for scramjet.bundle.js
 // as such it exports everything in scramjet
 // the entry point for scramjet.all.js (what most sites wil use) is entry.ts
@@ -6,6 +7,7 @@ import "./global.d";
 import { atob } from "@/shared/snapshot";
 import { setWasm } from "@rewriters/wasm";
 import { ScramjetVersionInfo, ScramjetConfig } from "./types";
+import { defaultWebrtcConfig } from "./shared/webrtc";
 
 declare const VERSION: string;
 declare const COMMITHASH: string;
@@ -48,6 +50,10 @@ export const defaultConfig: ScramjetConfig = {
 	},
 	siteFlags: {},
 	maskedfiles: [],
+	webrtc: {
+		...defaultWebrtcConfig,
+		iceServers: [],
+	},
 };
 
 export const defaultConfigDev: ScramjetConfig = {
@@ -66,7 +72,7 @@ export const defaultConfigDev: ScramjetConfig = {
 declare const REWRITERWASM: string | undefined;
 // bundled build will have the wasm binary inlined as a base64 string
 if (REWRITERWASM) {
-	setWasm(Uint8Array.from(atob(REWRITERWASM), (c) => c.charCodeAt(0)));
+	setWasm(NativeUint8Array.from(atob(REWRITERWASM), (c) => c.charCodeAt(0)));
 }
 
 export * from "./symbols";

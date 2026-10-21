@@ -4,10 +4,12 @@ export default [
 	playwrightTest({
 		name: "site-google-frontpage",
 		fn: async ({ frame, navigate }) => {
-			await navigate("https://www.google.com/");
+			await navigate("https://www.google.com/?hl=en");
 
 			// Wait for the search box to be visible
-			const search = frame.locator("textarea[title='Search']").first();
+			const search = frame
+				.locator("textarea[name='q'], input[name='q']")
+				.first();
 			await search.waitFor({ state: "visible", timeout: 30000 });
 		},
 	}),
@@ -15,7 +17,7 @@ export default [
 	playwrightTest({
 		name: "site-google-apps-menu",
 		fn: async ({ frame, navigate }) => {
-			await navigate("https://www.google.com/");
+			await navigate("https://www.google.com/?hl=en");
 
 			const appsButton = frame.locator("a[aria-label='Google apps']").first();
 			await appsButton.waitFor({ state: "visible", timeout: 30000 });

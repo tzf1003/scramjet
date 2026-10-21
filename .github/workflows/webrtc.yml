@@ -1,0 +1,238 @@
+name: WebRTC
+
+on:
+  push:
+    paths:
+      - "packages/core/src/**"
+      - "packages/controller/src/**"
+      - "packages/runway/src/**"
+      - "tests/webrtc/**"
+      - "docs/webrtc-*.md"
+      - ".github/workflows/webrtc.yml"
+  pull_request:
+    paths:
+      - "packages/core/src/**"
+      - "packages/controller/src/**"
+      - "packages/runway/src/**"
+      - "tests/webrtc/**"
+      - "docs/webrtc-*.md"
+      - ".github/workflows/webrtc.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WASM_BINDGEN_VERSION: "0.2.105"
+
+jobs:
+  quality:
+    name: WebRTC typecheck and lint regression gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+      - name: Generate rewriter WASM and TypeScript bindings
+        env:
+          RELEASE: "1"
+        run: pnpm --dir packages/core run rewriter:build
+      - run: node tests/webrtc/check-quality.mjs
+      - name: Credential service tests
+        run: node --test tests/webrtc/unit/credentials.test.mjs
+      - name: Runner disposal and watchdog regression tests
+        run: |
+          node --experimental-strip-types --test tests/webrtc/unit/http-fixture.test.ts
+          python3 -m unittest discover -s tests/webrtc/unit -p 'test_*.py'
+      - name: Isolation fault injection
+        run: docker run --rm --cap-add NET_ADMIN -v "$PWD/tests/webrtc/isolation:/isolation:ro" nicolaka/netshoot python3 /isolation/regression.py
+
+  unit:
+    name: WebRTC policy unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+      - name: Run unit tests
+        run: node --experimental-strip-types --test tests/webrtc/unit/webrtc.test.ts
+
+  relay:
+    name: Real TURN relay + DataChannel
+    runs-on: ubuntu-latest
+    needs: [unit, quality]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+
+      - name: Build rewriter wasm and bundles
+        env:
+          RELEASE: "1"
+        run: |
+          pnpm --dir packages/core run rewriter:build
+          pnpm exec rspack build --mode production
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/runway
+
+      - name: Chromium WebRTC suite and real TURN faults
+        run: python3 tests/webrtc/run-browser-suite.py --browser chromium --output tests/webrtc/artifacts/chromium
+
+      - name: TURN transport matrix (UDP/TCP/TLS)
+        run: |
+          for transport in udp tcp tls; do
+            python3 tests/webrtc/run-browser-suite.py \
+              --browser chromium --filter webrtc-relay-datachannel \
+              --transport "$transport" \
+              --output "tests/webrtc/artifacts/transport-$transport"
+          done
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p tests/webrtc/artifacts
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env logs > tests/webrtc/artifacts/docker.log || true
+          docker compose -f tests/webrtc/docker-compose.yml --env-file tests/webrtc/.env ps > tests/webrtc/artifacts/docker-ps.txt || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webrtc-relay-logs
+          path: |
+            tests/webrtc/artifacts/
+
+  cross-browser:
+    name: Cross-browser (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    needs: relay
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+      - name: Build bundles
+        env:
+          RELEASE: "1"
+        run: |
+          pnpm --dir packages/core run rewriter:build
+          pnpm exec rspack build --mode production
+      - name: Install Playwright ${{ matrix.browser }}
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+        working-directory: packages/runway
+      - name: Start virtual audio output for native media
+        run: |
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=scramjet_webrtc
+          pactl set-default-sink scramjet_webrtc
+          pactl list short sinks
+      - name: Run browser suite and real TURN faults
+        run: python3 tests/webrtc/run-browser-suite.py --browser ${{ matrix.browser }} --output tests/webrtc/artifacts/${{ matrix.browser }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webrtc-${{ matrix.browser }}-logs
+          path: tests/webrtc/artifacts/
+
+  enforced:
+    name: Enforced isolation (nftables + namespace)
+    # The native Chromium sandbox needs unprivileged user namespaces. Ubuntu
+    # 24.04's host AppArmor policy restricts these even in privileged containers.
+    runs-on: ubuntu-22.04
+    needs: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install
+
+      - name: Setup rewriter toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+
+      - name: Build bundles
+        env:
+          RELEASE: "1"
+        run: |
+          pnpm --dir packages/core run rewriter:build
+          pnpm exec rspack build --mode production
+
+      - name: Prepare Linux verification image
+        run: |
+          sh tests/webrtc/coturn/generate-certs.sh
+          docker build -f tests/webrtc/isolation/Dockerfile -t scramjet-webrtc-linux-verification:local .
+
+      - name: Verify sandbox user namespace support
+        run: |
+          docker run --rm --privileged --network none --entrypoint setpriv \
+            scramjet-webrtc-linux-verification:local \
+            --reuid=65534 --regid=65534 --clear-groups \
+            --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs \
+            unshare --user --map-root-user true
+
+      - name: IPv4 enforced browser suite and packet controls
+        run: python3 tests/webrtc/isolation/run-linux-suite.py --output tests/webrtc/artifacts/ipv4
+
+      - name: Coturn authenticated IPv4 and IPv6 peer ACLs
+        run: python3 tests/webrtc/coturn/test-peer-acl.py --output tests/webrtc/artifacts/peer-acl.json
+
+      - name: Stop native browser when isolation policy changes
+        run: python3 tests/webrtc/isolation/test-supervisor.py --output tests/webrtc/artifacts/supervisor
+
+      - name: IPv6 enforced browser suite and packet controls
+        run: python3 tests/webrtc/isolation/run-linux-suite.py --ipv6 --output tests/webrtc/artifacts/ipv6
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webrtc-isolation-logs
+          path: tests/webrtc/artifacts/

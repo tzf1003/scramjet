@@ -1,3 +1,4 @@
+import { NativeArray, NativeDate, NativeTextEncoder } from "@/shared/snapshot";
 // adapted from https://www.npmjs.com/package/set-cookie-parser, licensed MIT
 // we'll be forever in the shadow of node-unblocker or something
 
@@ -14,7 +15,7 @@ type ParsedCookie = {
 };
 
 const MAX_COOKIE_PAIR_BYTES = 4096;
-const textEncoder = new TextEncoder();
+const textEncoder = new NativeTextEncoder();
 
 function isNonEmptyString(str: unknown): str is string {
 	return typeof str === "string" && !!str.trim();
@@ -60,7 +61,7 @@ function parseString(setCookieValue: string): ParsedCookie | null {
 		const sideValue = sides.join("=");
 
 		if (key === "expires") {
-			cookie.expires = new Date(sideValue);
+			cookie.expires = new NativeDate(sideValue);
 		} else if (key === "max-age") {
 			cookie.maxAge = parseInt(sideValue, 10);
 		} else if (key === "secure") {
@@ -123,7 +124,7 @@ function parse(input: string | undefined): ParsedCookie[] {
 }
 
 function splitCookiesString(cookiesString: unknown): string[] {
-	if (Array.isArray(cookiesString)) {
+	if (NativeArray.isArray(cookiesString)) {
 		return cookiesString;
 	}
 	if (typeof cookiesString !== "string") {

@@ -1,3 +1,4 @@
+import { Nativeconsole } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 
 export default function (client: ScramjetClient) {
@@ -8,7 +9,7 @@ export default function (client: ScramjetClient) {
 		},
 	});
 
-	const log = console.log;
+	const log = Nativeconsole.log;
 	client.Trap("console.log", {
 		set(_ctx, _v) {
 			// is there a legitimate reason to let sites do this?

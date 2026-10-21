@@ -2,7 +2,8 @@ import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { ScramjetClient } from "@client/index";
 import { Reflect_apply, Reflect_get, Reflect_set } from "@/shared/snapshot";
 
-export default function (client: ScramjetClient) {
+export default function (client: ScramjetClient, self: GlobalThis) {
+	const { CSSStyleDeclaration: NativeCSSStyleDeclaration } = self;
 	client.Proxy("CSSStyleDeclaration.prototype.setProperty", {
 		apply(ctx) {
 			if (!ctx.args[1]) return;
@@ -80,7 +81,7 @@ export default function (client: ScramjetClient) {
 						});
 					}
 
-					if (prop in CSSStyleDeclaration.prototype) return value;
+					if (prop in NativeCSSStyleDeclaration.prototype) return value;
 					if (!value) return value;
 
 					return unrewriteCss(value, client.context);

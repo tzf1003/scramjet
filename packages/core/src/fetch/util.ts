@@ -1,3 +1,4 @@
+import { NativeURL } from "@/shared/snapshot";
 import { isHtmlMimeType, ScramjetHeaders } from "@/shared";
 import { BareResponse } from "@mercuryworkshop/proxy-transports";
 import { ScramjetFetchParsed } from ".";
@@ -40,7 +41,7 @@ export function createReferrerString(
 
 	const referrerOrigin = clientUrl.origin;
 
-	const referrerUrl = new URL(clientUrl.href);
+	const referrerUrl = new NativeURL(clientUrl.href);
 	referrerUrl.hash = "";
 	const referrerUrlString = referrerUrl.href;
 

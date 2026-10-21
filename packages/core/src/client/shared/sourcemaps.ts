@@ -1,4 +1,9 @@
 import {
+	NativeDataView,
+	NativeTextDecoder,
+	NativeUint8Array,
+} from "@/shared/snapshot";
+import {
 	Object_defineProperty,
 	Number_isSafeInteger,
 	Error,
@@ -41,9 +46,9 @@ function registerRewrites(
 	buf: Array<number>,
 	tag: string
 ) {
-	const sourcemap = Uint8Array.from(buf);
-	const view = new DataView(sourcemap.buffer);
-	const decoder = new TextDecoder("utf-8");
+	const sourcemap = NativeUint8Array.from(buf);
+	const view = new NativeDataView(sourcemap.buffer);
+	const decoder = new NativeTextDecoder("utf-8");
 
 	const rewrites: Rewrite[] = [];
 
@@ -187,6 +192,8 @@ export default function (client: ScramjetClient, self: Self) {
 	// this can lead to double rewrites which is bad
 	client.Proxy("Function.prototype.toString", {
 		apply(ctx) {
+			const nativeString = client.box.nativeFunctionStrings.get(ctx.this);
+			if (nativeString !== undefined) return ctx.return(nativeString);
 			if (client.box.unproxy.has(ctx.this)) {
 				// toString is being called on a proxy of a native function
 				// `this` will then be the proxy, which has the wrong [[SourceText]]

@@ -1,0 +1,31 @@
+{
+  "policyVersion": 2,
+  "table": "scramjet_webrtc",
+  "policySha256": "7de246d58fbb1c16efe7301d03800b0fad157743eb5f7df57811ff8a9f061efc",
+  "networkNamespace": "net:[4026532715]",
+  "installed": true,
+  "proxyHosts": [
+    "10.200.0.1"
+  ],
+  "proxyTcpPorts": [
+    4500,
+    4501,
+    18081,
+    18083
+  ],
+  "turnHosts": [
+    "192.168.215.5",
+    "fd42:736a:231::3"
+  ],
+  "turnUdpPort": 13478,
+  "turnTcpPorts": [
+    13478,
+    15349
+  ],
+  "relayPorts": [
+    50160,
+    50200
+  ],
+  "dnsHosts": [],
+  "dnsPort": 53
+}

@@ -90,7 +90,7 @@ export default [
 		},
 	},
 	{
-		files: ["src/shared/snapshot.ts"],
+		files: ["src/shared/snapshot.ts", "src/shared/webrtc.ts"],
 		rules: {
 			"scramjet-core/no-globals": ["off"],
 		},

@@ -15,6 +15,7 @@
 		</button>
 		<iframe
 			id="testframe"
+			allow="camera; microphone; display-capture"
 			style="width: 100%; height: 80vh; border: 1px solid #ccc"
 		></iframe>
 
@@ -33,37 +34,47 @@
 
 				const registration = await navigator.serviceWorker.register("/sw.js");
 
-				// Wait for the service worker to be ready
+				// ready also covers a worker that became active between
+				// register() and adding a statechange listener (Firefox tabs).
+				statusEl.textContent = "Waiting for service worker to activate...";
+				await navigator.serviceWorker.ready;
 				if (!navigator.serviceWorker.controller) {
-					statusEl.textContent = "Waiting for service worker to activate...";
 					await new Promise((resolve) => {
-						if (registration.active) {
-							resolve();
-							return;
-						}
-						const sw = registration.installing || registration.waiting;
-						if (sw) {
-							sw.addEventListener("statechange", () => {
-								if (sw.state === "activated") resolve();
-							});
-						}
-					});
-					// Wait for controller
-					if (!navigator.serviceWorker.controller) {
-						await new Promise((resolve) => {
-							navigator.serviceWorker.addEventListener(
+						const finish = () => {
+							clearTimeout(timer);
+							navigator.serviceWorker.removeEventListener(
 								"controllerchange",
-								resolve,
-								{ once: true }
+								finish
 							);
-						});
-					}
+							resolve();
+						};
+						const timer = setTimeout(finish, 5000);
+						navigator.serviceWorker.addEventListener(
+							"controllerchange",
+							finish
+						);
+						if (navigator.serviceWorker.controller) finish();
+					});
 				}
+				if (!navigator.serviceWorker.controller) {
+					// An already-active worker need not emit another controllerchange
+					// for a newly opened tab. Reload once so the document is controlled.
+					const key = "__runway_sw_claim_reload";
+					if (!sessionStorage.getItem(key)) {
+						sessionStorage.setItem(key, "1");
+						location.reload();
+						return;
+					}
+					throw new Error(
+						"Active service worker did not control the harness after reload"
+					);
+				}
+				sessionStorage.removeItem("__runway_sw_claim_reload");
 
 				statusEl.textContent = "Initializing controller...";
 
 				const innerTransport = new LibcurlClient({
-					wisp: "ws://localhost:4501/",
+					wisp: `ws://${location.hostname}:4501/`,
 				});
 				const transport = new RunwayCleartextHttpsTransport(innerTransport);
 
@@ -77,6 +88,21 @@
 					transport,
 				});
 				window.__runwayController = controller;
+				window.__runwaySetWebrtcConfig = (config) => {
+					controller.scramjetConfig.webrtc = {
+						...controller.scramjetConfig.webrtc,
+						...config,
+					};
+				};
+				window.__runwayRefreshWebrtcCredentials = () =>
+					controller.refreshWebrtcCredentials();
+				window.__runwayReconnectTransport = async () => {
+					const next = new RunwayCleartextHttpsTransport(
+						new LibcurlClient({ wisp: `ws://${location.hostname}:4501/` })
+					);
+					await next.init();
+					controller.setTransport(next);
+				};
 
 				await controller.ready;
 
@@ -111,9 +137,13 @@
 
 				reloadBtn.addEventListener("click", window.__runwayReload);
 
-				// Auto-navigate to last test on reload
+				// Automated popup tests install their fixture mapping and policy
+				// before navigating. Normal harness reloads restore the last test.
 				const lastTest = sessionStorage.getItem("__runway_last_test");
-				if (lastTest) {
+				const manualNavigation =
+					new URL(location.href).searchParams.get("runwayManualNavigation") ===
+					"1";
+				if (lastTest && !manualNavigation) {
 					console.log("Reloading last test:", lastTest);
 					window.__runwayNavigate(lastTest);
 				}

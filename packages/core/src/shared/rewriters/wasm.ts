@@ -1,3 +1,8 @@
+import {
+	ArrayBuffer_isView,
+	NativeUint8Array,
+	NativeWebAssembly,
+} from "@/shared/snapshot";
 // i am a cat. i like to be petted. i like to be fed. i like to be
 import { initSync, Rewriter } from "../../../rewriter/wasm/out/wasm.js";
 import type { JsRewriterOutput } from "../../../rewriter/wasm/out/wasm.js";
@@ -10,13 +15,13 @@ import { Error, TextDecoder_decode } from "@/shared/snapshot";
 
 let wasm_u8: Uint8Array;
 export function setWasm(u8: Uint8Array | ArrayBuffer) {
-	wasm_u8 = u8 instanceof Uint8Array ? u8 : new Uint8Array(u8);
+	wasm_u8 = ArrayBuffer_isView(u8) ? u8 : new NativeUint8Array(u8);
 }
 
 const MAGIC = "\0asm".split("").map((x) => x.charCodeAt(0));
 
 function initWasm() {
-	if (!(wasm_u8 instanceof Uint8Array))
+	if (!ArrayBuffer_isView(wasm_u8))
 		throw new Error("rewriter wasm not found (was setWasm called?)");
 
 	if (![...wasm_u8.slice(0, 4)].every((x, i) => x === MAGIC[i]))
@@ -26,7 +31,7 @@ function initWasm() {
 		);
 
 	initSync({
-		module: new WebAssembly.Module(wasm_u8 as unknown as BufferSource),
+		module: new NativeWebAssembly.Module(wasm_u8 as unknown as BufferSource),
 	});
 }
 

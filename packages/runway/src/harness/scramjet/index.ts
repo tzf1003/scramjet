@@ -18,7 +18,8 @@ export async function startHarness() {
 	app.use(
 		"/scramjet",
 		express.static(
-			path.join(packageRoot, "node_modules/@mercuryworkshop/scramjet/dist")
+			process.env.RUNWAY_SCRAMJET_DIST ??
+				path.join(packageRoot, "node_modules/@mercuryworkshop/scramjet/dist")
 		)
 	);
 

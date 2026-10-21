@@ -8,7 +8,8 @@ import {
 	Reflect_ownKeys,
 } from "@/shared/snapshot";
 
-export default function (client: ScramjetClient) {
+export default function (client: ScramjetClient, self: GlobalThis) {
+	const { NamedNodeMap: NativeNamedNodeMap } = self;
 	client.Trap("Element.prototype.attributes", {
 		get(ctx) {
 			const map = ctx.get() as NamedNodeMap;
@@ -28,7 +29,10 @@ export default function (client: ScramjetClient) {
 							proxy[`${namespace}:${name}`];
 					}
 
-					if (prop in NamedNodeMap.prototype && typeof value === "function") {
+					if (
+						prop in NativeNamedNodeMap.prototype &&
+						typeof value === "function"
+					) {
 						return new Proxy(value, {
 							apply(target, that, args) {
 								if (that === proxy) {

@@ -1,0 +1,4 @@
+{
+	"_comment": "Proxy-only WebRTC. This prevents non-proxied UDP and is incompatible with TURN/UDP; only use when WebRTC is expected to fail or when a UDP-capable proxy exists. Not a TURN relay policy.",
+	"WebRtcIPHandlingPolicy": "disable_non_proxied_udp"
+}

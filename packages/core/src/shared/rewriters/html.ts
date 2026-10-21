@@ -1,3 +1,4 @@
+import { NativeError, NativeWeakMap, NativeWeakSet } from "@/shared/snapshot";
 import { ElementType, Parser } from "htmlparser2";
 import { ChildNode, DomHandler, Element, Comment } from "domhandler";
 import render from "dom-serializer";
@@ -66,9 +67,9 @@ function isElementNode(node: ChildNode): node is Element {
 export class IncrementalHtmlRewriter {
 	private readonly handler: DomHandler;
 	private readonly parser: Parser;
-	private readonly completedElements = new WeakSet<Element>();
-	private readonly emittedLengths = new WeakMap<ChildNode, number>();
-	private readonly rewrittenNodes = new WeakMap<ChildNode, string>();
+	private readonly completedElements = new NativeWeakSet<Element>();
+	private readonly emittedLengths = new NativeWeakMap<ChildNode, number>();
+	private readonly rewrittenNodes = new NativeWeakMap<ChildNode, string>();
 	private ended = false;
 
 	constructor(
@@ -86,7 +87,7 @@ export class IncrementalHtmlRewriter {
 
 	write(html: string) {
 		if (this.ended) {
-			throw new Error("IncrementalHtmlRewriter stream already ended");
+			throw new NativeError("IncrementalHtmlRewriter stream already ended");
 		}
 
 		this.parser.write(html);
@@ -195,7 +196,10 @@ function rewriteHtmlInner(
 				continue;
 			}
 
-			if (child.type === ElementType.Tag && child.name === "html") {
+			if (
+				child.type === ElementType.Tag &&
+				(child as Element).name === "html"
+			) {
 				htmlRoot = child as Element;
 			} else {
 				// there's a child of the root that isn't an html element or a doctype/comment/text
@@ -214,13 +218,19 @@ function rewriteHtmlInner(
 				continue;
 			}
 
-			if (child.type === ElementType.Tag && child.name === "head") {
+			if (
+				child.type === ElementType.Tag &&
+				(child as Element).name === "head"
+			) {
 				if (bodyElement) {
 					// head comes after body
 					return true;
 				}
 				headElement = child as Element;
-			} else if (child.type === ElementType.Tag && child.name === "body") {
+			} else if (
+				child.type === ElementType.Tag &&
+				(child as Element).name === "body"
+			) {
 				bodyElement = child as Element;
 			} else {
 				// there's a child of html that isn't head or body

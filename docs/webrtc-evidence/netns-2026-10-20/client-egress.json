@@ -1,0 +1,11 @@
+{
+  "runId": "9399d0a7725946bfb824f2a162f8a5af",
+  "policySha256": "7de246d58fbb1c16efe7301d03800b0fad157743eb5f7df57811ff8a9f061efc",
+  "pcapSha256": "aa5a3030c7f984d19aaec3b8d496ccda3c9f30b20cc1dfb3bab4f38698024ad6",
+  "turnPackets": {
+    "ipv4": 0,
+    "ipv6": 592
+  },
+  "unauthorizedPackets": [],
+  "ok": true
+}

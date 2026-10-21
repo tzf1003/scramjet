@@ -1,3 +1,4 @@
+import { NativeMap, NativeWeakMap } from "@/shared/snapshot";
 import { IncrementalHtmlRewriter } from "@/shared";
 import { ScramjetClient } from "./client";
 import { SourceMaps } from "./shared/sourcemaps";
@@ -8,14 +9,17 @@ import {
 
 export class SingletonBox {
 	clients: ScramjetClient[] = [];
-	globals: Map<Self, ScramjetClient> = new Map();
-	documents: Map<Document, ScramjetClient> = new Map();
-	histories: Map<History, ScramjetClient> = new Map();
-	locations: Map<Location, ScramjetClient> = new Map();
-	writeRewriters = new WeakMap<Document, IncrementalHtmlRewriter>();
-	unproxy = new Map<any, any>();
+	globals: Map<Self, ScramjetClient> = new NativeMap();
+	documents: Map<Document, ScramjetClient> = new NativeMap();
+	histories: Map<History, ScramjetClient> = new NativeMap();
+	locations: Map<Location, ScramjetClient> = new NativeMap();
+	writeRewriters = new NativeWeakMap<Document, IncrementalHtmlRewriter>();
+	unproxy = new NativeMap<any, any>();
+	// Guarded native functions retain their display text without exposing a
+	// callable original through the shared reference registry.
+	nativeFunctionStrings = new NativeWeakMap<object, string>();
 
-	ctors: Record<string, Function[]> = {};
+	ctors: Record<string, ((...args: any[]) => any)[]> = {};
 
 	sourcemaps: SourceMaps = {};
 

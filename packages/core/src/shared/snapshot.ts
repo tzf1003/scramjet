@@ -5,12 +5,15 @@ export const String = globalThis.String;
 export const String_fromCodePoint = globalThis.String.fromCodePoint;
 export const String_fromCharCode = globalThis.String.fromCharCode;
 const Function_prototype_call = globalThis.Function.prototype.call;
+export const Function_prototype_toString =
+	globalThis.Function.prototype.toString;
 export const String_startsWith = Function_prototype_call.bind(
 	globalThis.String.prototype.startsWith
 ) as (str: string, searchString: string, position?: number) => boolean;
 export const Number = globalThis.Number;
 export const Number_parseInt = globalThis.Number.parseInt;
 export const Number_isSafeInteger = globalThis.Number.isSafeInteger;
+export const Number_isFinite = globalThis.Number.isFinite;
 
 export const Object_keys = globalThis.Object.keys;
 export const Object_values = globalThis.Object.values;
@@ -26,6 +29,8 @@ export const Object_getOwnPropertySymbols =
 export const Object_defineProperty = globalThis.Object.defineProperty;
 export const Object_defineProperties = globalThis.Object.defineProperties;
 export const Object_setPrototypeOf = globalThis.Object.setPrototypeOf;
+export const Object_getPrototypeOf = globalThis.Object.getPrototypeOf;
+export const Object_assign = globalThis.Object.assign;
 
 export const Reflect_get = globalThis.Reflect.get;
 export const Reflect_set = globalThis.Reflect.set;
@@ -45,7 +50,10 @@ const textEncoder = new TextEncoder();
 export const TextEncoder_encode = textEncoder.encode.bind(textEncoder);
 
 const textDecoder = new TextDecoder();
-export const TextDecoder_decode = textDecoder.decode.bind(textDecoder);
+export const TextDecoder_decode: (
+	input?: AllowSharedBufferSource,
+	options?: TextDecodeOptions
+) => string = textDecoder.decode.bind(textDecoder);
 
 const performance = globalThis.performance;
 export const Performance_now = performance.now.bind(performance);
@@ -59,9 +67,18 @@ export const URL_revokeObjectURL = globalThis.URL.revokeObjectURL.bind(
 	globalThis.URL
 );
 
-export const Error = globalThis.Error;
+export const Error = globalThis.Error as ErrorConstructor & {
+	stackTraceLimit: number;
+	prepareStackTrace?: (
+		error: Error,
+		stack: Array<{ getFileName(): string | null }>
+	) => unknown;
+};
+export const TypeError = globalThis.TypeError;
+export const Date_now = globalThis.Date.now;
 export const Math_random = globalThis.Math.random;
 export const Math_min = globalThis.Math.min;
+export const Math_max = globalThis.Math.max;
 
 export const Promise_all = globalThis.Promise.all.bind(globalThis.Promise);
 export const Promise_race = globalThis.Promise.race.bind(globalThis.Promise);
@@ -78,7 +95,7 @@ export const Promise_any = globalThis.Promise.any.bind(globalThis.Promise);
 
 export const Symbol_for = globalThis.Symbol.for;
 
-declare const WrappedBrand: unique symbol;
+export declare const WrappedBrand: unique symbol;
 
 type WrappedInstance<T> = T extends object ? Wrapped<T> : T;
 
@@ -88,16 +105,16 @@ type InstantiatePrototype<P, Params extends unknown[]> = Params extends [
 	infer A,
 	infer B,
 ]
-	? P extends WeakMap<any, any>
-		? WeakMap<A & WeakKey, B>
-		: P extends Map<any, any>
-			? Map<A, B>
+	? P extends Map<any, any>
+		? Map<A, B>
+		: P extends WeakMap<any, any>
+			? WeakMap<A & WeakKey, B>
 			: P
 	: Params extends [infer A]
-		? P extends WeakSet<any>
-			? WeakSet<A & object>
-			: P extends Set<any>
-				? Set<A>
+		? P extends Set<any>
+			? Set<A>
+			: P extends WeakSet<any>
+				? WeakSet<A & object>
 				: P
 		: P;
 
@@ -113,68 +130,43 @@ type WrappedCtor<
 		readonly [WrappedBrand]: T;
 	};
 
-type WrappedConstructor<T> =
-	ConstructorPrototype<T> extends Map<any, any>
-		? T extends { new <K, V>(...args: infer Args): any }
+type WrappedConstructor<T> = T extends MapConstructor
+	? WrappedCtor<
+			T,
+			[unknown, unknown],
+			new <K, V>(
+				entries?: Iterable<readonly [K, V]> | null
+			) => Wrapped<Map<K, V>>
+		>
+	: T extends SetConstructor
+		? WrappedCtor<
+				T,
+				[unknown],
+				new <U>(values?: Iterable<U> | null) => Wrapped<Set<U>>
+			>
+		: T extends WeakMapConstructor
 			? WrappedCtor<
 					T,
-					[unknown, unknown],
-					new <K, V>(...args: Args) => Wrapped<Map<K, V>>
+					[WeakKey, unknown],
+					new <K extends WeakKey, V>(
+						entries?: Iterable<readonly [K, V]> | null
+					) => Wrapped<WeakMap<K, V>>
 				>
-			: never
-		: ConstructorPrototype<T> extends WeakMap<any, any>
-			? T extends {
-					new <K extends WeakKey, V>(...args: infer Args): any;
-				}
+			: T extends WeakSetConstructor
 				? WrappedCtor<
 						T,
-						[WeakKey, unknown],
-						new <K extends WeakKey, V>(...args: Args) => Wrapped<WeakMap<K, V>>
+						[object],
+						new <U extends object>(
+							values?: Iterable<U> | null
+						) => Wrapped<WeakSet<U>>
 					>
-				: never
-			: ConstructorPrototype<T> extends WeakSet<any>
-				? T extends { new <U extends object>(...args: infer Args): any }
-					? WrappedCtor<
-							T,
-							[object],
-							new <U extends object>(...args: Args) => Wrapped<WeakSet<U>>
-						>
-					: never
-				: ConstructorPrototype<T> extends Set<any>
-					? T extends { new <U>(...args: infer Args): any }
-						? WrappedCtor<
-								T,
-								[unknown],
-								new <U>(...args: Args) => Wrapped<Set<U>>
-							>
-						: never
-					: T extends { new <K, V>(...args: infer Args): any }
-						? WrappedCtor<
-								T,
-								[unknown, unknown],
-								new <K, V>(
-									...args: Args
-								) => Wrapped<
-									InstantiatePrototype<ConstructorPrototype<T>, [K, V]>
-								>
-							>
-						: T extends { new <U>(...args: infer Args): any }
-							? WrappedCtor<
-									T,
-									[unknown],
-									new <U>(
-										...args: Args
-									) => Wrapped<
-										InstantiatePrototype<ConstructorPrototype<T>, [U]>
-									>
-								>
-							: T extends abstract new (...args: infer Args) => infer Instance
-								? Omit<T, "prototype"> & {
-										new (...args: Args): WrappedInstance<Instance>;
-										prototype: WrappedInstance<Instance>;
-										readonly [WrappedBrand]: T;
-									}
-								: never;
+				: T extends abstract new (...args: infer Args) => infer Instance
+					? Omit<T, "prototype"> & {
+							new (...args: Args): WrappedInstance<Instance>;
+							prototype: WrappedInstance<Instance>;
+							readonly [WrappedBrand]: T;
+						}
+					: never;
 
 export type Wrapped<T> = T extends abstract new (...args: any) => any
 	? WrappedConstructor<T>
@@ -247,3 +239,33 @@ export function makeWrap<T extends object>(source: T): Wrapped<T> {
 
 	return wrapped as Wrapped<T>;
 }
+
+// Stable constructor bindings for the request and rewriter paths.
+export const CapturedGlobal = globalThis;
+export const ArrayBuffer_isView = globalThis.ArrayBuffer.isView;
+export const NativeArray = globalThis.Array;
+export const NativeArrayBuffer = globalThis.ArrayBuffer;
+export const NativeBlob = globalThis.Blob;
+export const NativeDataView = globalThis.DataView;
+export const NativeDate = globalThis.Date;
+export const NativeError = globalThis.Error;
+export const NativeHeaders = globalThis.Headers;
+export const NativeMap = globalThis.Map;
+export const NativeNumber = globalThis.Number;
+export const NativeObject = globalThis.Object;
+export const NativePromise = globalThis.Promise;
+export const NativeReadableStream = globalThis.ReadableStream;
+export const NativeReflect = globalThis.Reflect;
+export const NativeRegExp = globalThis.RegExp;
+export const NativeSharedArrayBuffer = globalThis.SharedArrayBuffer;
+export const NativeSymbol = globalThis.Symbol;
+export const NativeTextDecoder = globalThis.TextDecoder;
+export const NativeTextEncoder = globalThis.TextEncoder;
+export const NativeURL = globalThis.URL;
+export const NativeUint8Array = globalThis.Uint8Array;
+export const NativeWeakMap = globalThis.WeakMap;
+export const NativeWeakSet = globalThis.WeakSet;
+export const NativeWebAssembly = globalThis.WebAssembly;
+export const NativeWritableStream = globalThis.WritableStream;
+export const Nativeconsole = globalThis.console;
+export const Nativeperformance = globalThis.performance;

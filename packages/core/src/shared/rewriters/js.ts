@@ -1,8 +1,10 @@
+import { CapturedGlobal } from "@/shared/snapshot";
 import { flagEnabled, ScramjetContext } from "@/shared";
 import { URLMeta } from "@rewriters/url";
 
 import { getRewriter, JsRewriterOutput } from "@rewriters/wasm";
 import {
+	Error,
 	Array_from,
 	TextDecoder_decode,
 	_RegExp,
@@ -115,7 +117,7 @@ export function rewriteJs(
 		let newjs = res.js;
 
 		if (flagEnabled("sourcemaps", context, meta.base)) {
-			const pushmap = globalThis[context.config.globals.pushsourcemapfn];
+			const pushmap = CapturedGlobal[context.config.globals.pushsourcemapfn];
 			if (pushmap) {
 				pushmap(Array_from(res.map), res.tag);
 			} else {

@@ -1,8 +1,10 @@
 {
 	"compilerOptions": {
+		"types": ["node", "@rspack/core/module"],
 		"target": "esnext",
 		"module": "esnext",
 		"rootDir": "./src",
+		"preserveSymlinks": true,
 		"moduleResolution": "Bundler",
 		"skipLibCheck": true,
 		"declaration": true,

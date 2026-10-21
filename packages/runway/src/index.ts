@@ -2,8 +2,8 @@ import { glob, mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { chromium } from "playwright";
-import type { Page, Browser, BrowserContext } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
+import type { Page, Browser, BrowserContext, LaunchOptions } from "playwright";
 import v8toIstanbul from "v8-to-istanbul";
 import istanbulCoverage from "istanbul-lib-coverage";
 import {
@@ -696,7 +696,10 @@ async function main() {
 		}
 	}
 
-	const allTests = await discoverTests();
+	const browserName = process.env.RUNWAY_BROWSER ?? "chromium";
+	const allTests = (await discoverTests()).filter(
+		(test) => !test.browsers || test.browsers.includes(browserName)
+	);
 
 	// Filter tests if a pattern is provided
 	const tests = testFilter
@@ -752,21 +755,72 @@ async function main() {
 			"./harness/scramjet/index.ts"
 		);
 		await startHarness();
-		scramjetUrl = `http://localhost:${HARNESS_PORT}`;
+		const harnessHost = process.env.RUNWAY_HARNESS_HOST ?? "localhost";
+		scramjetUrl = `http://${harnessHost}:${HARNESS_PORT}`;
 		console.log(`📡 Scramjet harness running at ${scramjetUrl}`);
 		if (needsBareHarness) {
 			const { startBareHarness, BARE_PORT } = await import(
 				"./harness/bare/index.ts"
 			);
 			await startBareHarness();
-			bareUrl = `http://localhost:${BARE_PORT}`;
+			bareUrl = `http://${harnessHost}:${BARE_PORT}`;
 			console.log(`📡 Bare harness running at ${bareUrl}`);
 		}
 		console.log();
 
-		browser = await chromium.launch({
+		const browserType =
+			browserName === "firefox"
+				? firefox
+				: browserName === "webkit"
+					? webkit
+					: browserName === "chromium"
+						? chromium
+						: null;
+		if (!browserType) {
+			throw new Error(`unknown RUNWAY_BROWSER: ${browserName}`);
+		}
+		const launchOptions: LaunchOptions = {
 			headless: process.env.HEADED !== "1",
-		});
+			...(process.env.RUNWAY_BROWSER_EXECUTABLE
+				? { executablePath: process.env.RUNWAY_BROWSER_EXECUTABLE }
+				: {}),
+		};
+		if (browserName === "chromium") {
+			if (process.env.RUNWAY_CHROMIUM_SANDBOX === "1")
+				launchOptions.chromiumSandbox = true;
+			const args: string[] = [];
+			if (process.env.WEBRTC_FAKE_MEDIA === "1") {
+				args.push(
+					"--use-fake-device-for-media-stream",
+					"--use-fake-ui-for-media-stream",
+					"--auto-select-desktop-capture-source=Entire screen",
+					"--disable-audio-output",
+					"--autoplay-policy=no-user-gesture-required"
+				);
+			}
+			if (process.env.WEBRTC_INSECURE_TLS === "1") {
+				args.push("--ignore-certificate-errors", "--allow-insecure-localhost");
+			}
+			if (process.env.WEBRTC_EXPOSE_HOST_CANDIDATES === "1") {
+				args.push("--disable-features=WebRtcHideLocalIpsWithMdns");
+			}
+			const extraArgs =
+				process.env.RUNWAY_CHROMIUM_ARGS?.split(/\s+/).filter(Boolean);
+			if (extraArgs) args.push(...extraArgs);
+			if (args.length > 0) launchOptions.args = args;
+		} else if (browserName === "firefox") {
+			launchOptions.firefoxUserPrefs = {
+				"media.navigator.streams.fake": true,
+				"media.navigator.permission.disabled": true,
+				"media.autoplay.default": 0,
+			};
+			if (process.env.WEBRTC_EXPOSE_HOST_CANDIDATES === "1") {
+				launchOptions.firefoxUserPrefs[
+					"media.peerconnection.ice.obfuscate_host_addresses"
+				] = false;
+			}
+		}
+		browser = await browserType.launch(launchOptions);
 	} else {
 		console.log("🧪 Direct tests only: skipping harness/browser startup\n");
 	}
@@ -814,6 +868,11 @@ async function main() {
 	};
 
 	const runTestsForWorker = async (workerId: number, workerTests: Test[]) => {
+		const progress = (test: string, phase: string) => {
+			if (process.env.RUNWAY_PROGRESS === "1") {
+				console.log(`[Runway worker=${workerId} test=${test} phase=${phase}]`);
+			}
+		};
 		let consistencyHandler: (
 			source: HarnessKind,
 			label: string,
@@ -848,6 +907,7 @@ async function main() {
 		let needsReload = true;
 
 		for (const test of workerTests) {
+			progress(test.name, "prepare");
 			const runBareForTest = runBareTests && !test.scramjetOnly;
 			const consistencyTracker = createConsistencyTracker(runBareForTest);
 			consistencyHandler = consistencyTracker.handle;
@@ -861,6 +921,7 @@ async function main() {
 			let started = false;
 			try {
 				if (test.directFn) {
+					progress(test.name, "direct");
 					await test.directFn();
 					result = { status: "pass" };
 				} else {
@@ -902,14 +963,16 @@ async function main() {
 						serverResult = new Promise<TestResult>((resolve) => {
 							serverResultResolve = resolve;
 						});
-						await test.start({
-							pass: async (message?: string, details?: any) =>
-								serverResultResolve({ status: "pass", message, details }),
-							fail: async (message?: string, details?: any) =>
-								serverResultResolve({ status: "fail", message, details }),
-						});
-						started = true;
 					}
+					progress(test.name, "start");
+					await test.start({
+						pass: async (message?: string, details?: any) =>
+							serverResultResolve({ status: "pass", message, details }),
+						fail: async (message?: string, details?: any) =>
+							serverResultResolve({ status: "fail", message, details }),
+					});
+					started = true;
+					progress(test.name, "run");
 
 					const scramjetPromise = runTestOnHarness(
 						testPages.scramjet.page,
@@ -982,7 +1045,8 @@ async function main() {
 					message: error instanceof Error ? error.message : String(error),
 				};
 			} finally {
-				if (!test.directFn && !test.playwrightFn && started) {
+				if (!test.directFn && started) {
+					progress(test.name, "stop");
 					try {
 						await test.stop();
 					} catch (error) {
@@ -1041,6 +1105,7 @@ async function main() {
 		}
 
 		if (testPages) {
+			progress("worker", "cleanup");
 			await Promise.all([
 				testPages.scramjet.cleanup(),
 				testPages.bare?.cleanup(),
@@ -1057,6 +1122,8 @@ async function main() {
 	await Promise.all(
 		workerBuckets.map((bucket, index) => runTestsForWorker(index + 1, bucket))
 	);
+	if (process.env.RUNWAY_PROGRESS === "1")
+		console.log("[Runway phase=browser-close]");
 	await browser?.close();
 
 	if (coverageEnabled && needsHarness) {
@@ -1194,6 +1261,29 @@ async function main() {
 	const passed = results.filter((r) => r.result.status === "pass").length;
 	const failed = results.filter((r) => r.result.status === "fail").length;
 	const errors = results.filter((r) => r.result.status === "error").length;
+	if (process.env.WEBRTC_EVIDENCE_DIR) {
+		await mkdir(process.env.WEBRTC_EVIDENCE_DIR, { recursive: true });
+		await writeFile(
+			path.join(process.env.WEBRTC_EVIDENCE_DIR, `${browserName}-results.json`),
+			JSON.stringify(
+				{
+					runId: process.env.WEBRTC_RUN_ID,
+					browser: browserName,
+					mode: process.env.WEBRTC_TEST_MODE ?? "relay",
+					passed,
+					failed,
+					errors,
+					tests: results.map((entry) => ({
+						name: entry.test.name,
+						result: entry.result,
+						durationMs: entry.duration,
+					})),
+				},
+				null,
+				2
+			) + "\n"
+		);
+	}
 
 	console.log(
 		`\n✅ ${passed} passed | ❌ ${failed} failed | 💥 ${errors} errors\n`

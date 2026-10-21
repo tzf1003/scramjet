@@ -25,6 +25,9 @@ import {
 	type TrackedHistoryState,
 } from "@mercuryworkshop/scramjet";
 
+type WindowGlobal = Window &
+	typeof globalThis & { [SCRAMJETCLIENT]?: ScramjetClient };
+
 const MessagePort_postMessage = MessagePort.prototype.postMessage;
 const postMessage = (
 	port: MessagePort,
@@ -193,7 +196,7 @@ export function load(init: Init) {
 		});
 		return;
 	}
-	if (!("WASM" in self)) {
+	if (!("WASM" in self) || typeof self.WASM !== "string") {
 		throw new Error("WASM not found in global scope!");
 	}
 	const wasm = Uint8Array.from(atob(self.WASM), (c) => c.charCodeAt(0));
@@ -297,22 +300,22 @@ class ExecutionContextWrapper {
 		let isTopLevel = true;
 		if (!controllerFrame) {
 			isTopLevel = false;
-			let currentwin = this.global.window;
+			let currentwin = this.global.window as WindowGlobal;
 			while (currentwin.parent !== currentwin) {
 				const currentclient = currentwin[SCRAMJETCLIENT];
 				if (!currentclient) {
-					currentwin = currentwin.parent.window;
+					currentwin = currentwin.parent.window as WindowGlobal;
 					continue;
 				}
 				const currentFrame = currentclient.descriptors.get(
 					"window.frameElement",
 					currentwin
-				);
+				) as HTMLIFrameElement | null;
 				if (currentFrame && currentFrame[CONTROLLERFRAME]) {
 					controllerFrame = currentFrame[CONTROLLERFRAME];
 					break;
 				}
-				currentwin = currentwin.parent.window;
+				currentwin = currentwin.parent.window as WindowGlobal;
 			}
 		}
 		const context: ScramjetContext = {

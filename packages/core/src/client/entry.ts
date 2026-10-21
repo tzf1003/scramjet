@@ -1,3 +1,4 @@
+import { CapturedGlobal } from "@/shared/snapshot";
 // entrypoint for scramjet.client.js
 
 import { ScramjetContext, ScramjetInterface } from "@/shared/index";
@@ -5,8 +6,9 @@ import { SCRAMJETCLIENT } from "@/symbols";
 import { ScramjetClient } from "@client/index";
 import { ScramjetConfig } from "@/types";
 
-export const iswindow = "window" in globalThis && window instanceof Window;
-export const isworker = "WorkerGlobalScope" in globalThis;
-export const issw = "ServiceWorkerGlobalScope" in globalThis;
-export const isdedicated = "DedicatedWorkerGlobalScope" in globalThis;
-export const isshared = "SharedWorkerGlobalScope" in globalThis;
+export const iswindow =
+	CapturedGlobal.window === CapturedGlobal && "document" in CapturedGlobal;
+export const isworker = "WorkerGlobalScope" in CapturedGlobal;
+export const issw = "ServiceWorkerGlobalScope" in CapturedGlobal;
+export const isdedicated = "DedicatedWorkerGlobalScope" in CapturedGlobal;
+export const isshared = "SharedWorkerGlobalScope" in CapturedGlobal;

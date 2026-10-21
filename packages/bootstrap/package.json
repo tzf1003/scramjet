@@ -12,7 +12,7 @@
 		"directory": "packages/bootstrap"
 	},
 	"scripts": {
-		"build": "cd ../.. && rspack build --mode production --configName scramjet-bootstrap",
+		"build": "cd ../.. && rspack build --mode production --config-name scramjet-esmodule --config-name scramjet-types --config-name scramjet-controller --config-name scramjet-bootstrap",
 		"prepack": "pnpm build",
 		"prepublishOnly": "npx only-allow pnpm",
 		"pub": "pnpm publish --no-git-checks --access public"

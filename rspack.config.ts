@@ -1,10 +1,11 @@
-import { readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, chmodSync, existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
-import { exec, execSync } from "node:child_process";
+import { exec, execFile, execSync } from "node:child_process";
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 import { promisify } from "node:util";
 import { defineConfig } from "@rspack/cli";
 import {
@@ -169,52 +170,54 @@ class TypeScriptDeclarationsPlugin {
 		this.useAlias = useAlias;
 	}
 
+	private static inFlight = new Map<string, Promise<void>>();
+
 	apply(compiler: WebpackCompiler) {
-		compiler.hooks.afterEmit.tap("TypeScriptDeclarationsPlugin", () => {
-			(async () => {
-				try {
-					console.log(`Generating TypeScript declarations for ${this.dir}...`);
-					try {
-						const { stdout, stderr } = await execAsync(
-							`pnpm exec tsc --project ${this.tsconfigName}`,
-							{ cwd: this.dir }
-						);
-						if (stdout) console.log(stdout);
-						if (stderr && !stderr.includes("TS")) console.error(stderr);
-					} catch (tscError: any) {
-						// tsc exits with error code if there are TS errors, but still generates files
-						// Only log if it's not a TypeScript compilation error
-						if (tscError.code !== 2) {
-							throw tscError;
-						}
-						// if (tscError.stdout) console.log(tscError.stdout);
-						// if (tscError.stderr) console.warn(tscError.stderr);
-					}
-
-					if (this.useAlias) {
-						const aliasResult = await execAsync(
-							`pnpm exec tsc-alias --project ${this.tsconfigName}`,
-							{ cwd: this.dir }
-						);
-						if (aliasResult.stdout) console.log(aliasResult.stdout);
-						if (aliasResult.stderr) console.error(aliasResult.stderr);
-					}
-
-					try {
-						await execAsync(`rm -rf ${this.tempDir}`, { cwd: this.dir });
-					} catch (e) {}
-
-					console.log(
-						`TypeScript declarations generated successfully for ${this.dir}`
-					);
-				} catch (error: any) {
-					console.error(
-						`Error generating TypeScript declarations for ${this.dir}:`,
-						error.message
-					);
-				}
-			})();
+		compiler.hooks.afterEmit.tapPromise("TypeScriptDeclarationsPlugin", () => {
+			const key = `${this.dir}/${this.tsconfigName}`;
+			const existing = TypeScriptDeclarationsPlugin.inFlight.get(key);
+			if (existing) return existing;
+			const pending = this.generate().finally(() =>
+				TypeScriptDeclarationsPlugin.inFlight.delete(key)
+			);
+			TypeScriptDeclarationsPlugin.inFlight.set(key, pending);
+			return pending;
 		});
+	}
+
+	private async generate() {
+		console.log(`Generating TypeScript declarations for ${this.dir}...`);
+		try {
+			const { stdout, stderr } = await execFileAsync(
+				process.execPath,
+				[
+					join(__dirname, "packages/core/node_modules/typescript/bin/tsc"),
+					"--project",
+					this.tsconfigName,
+				],
+				{ cwd: this.dir }
+			);
+			if (stdout) console.log(stdout);
+			if (stderr) console.error(stderr);
+			const ambient = join(this.dir, "src/global.d.ts");
+			if (existsSync(ambient))
+				writeFileSync(
+					join(this.dir, "dist/types/global.d.ts"),
+					readFileSync(ambient)
+				);
+			if (this.useAlias) {
+				await execAsync(`pnpm exec tsc-alias --project ${this.tsconfigName}`, {
+					cwd: this.dir,
+				});
+			}
+			console.log(
+				`TypeScript declarations generated successfully for ${this.dir}`
+			);
+		} catch (error: any) {
+			throw new Error(
+				`TypeScript declarations failed for ${this.dir}:\n${error.stdout ?? error.message}\n${error.stderr ?? ""}`
+			);
+		}
 	}
 }
 
@@ -228,6 +231,15 @@ const createproxyappdir = join(__dirname, "packages/create-proxy-app");
 const wasmPath = join(scramjetdir, "dist/scramjet.wasm");
 let wasmB64: string;
 const wasmBuf = await readFile(wasmPath);
+if (
+	WebAssembly.Module.imports(new WebAssembly.Module(wasmBuf)).some(
+		({ module }) => module === "__wbindgen_placeholder__"
+	)
+) {
+	throw new Error(
+		"dist/scramjet.wasm is unprocessed wasm-bindgen input; build the rewriter before bundling."
+	);
+}
 wasmB64 = wasmBuf.toString("base64");
 
 export const tsloader = {
@@ -488,6 +500,8 @@ const moduleBundledConfig = createScramjetConfig({
 
 // Type generation configuration
 const typeGenConfig = defineConfig({
+	name: "scramjet-types",
+	dependencies: ["scramjet-esmodule"],
 	context: scramjetdir,
 	entry: {
 		index: "./src/index.ts",
@@ -528,7 +542,7 @@ const controllerVersionDefines = new rspack.DefinePlugin({
 
 const controllerConfig = createGenericConfig({
 	name: "scramjet-controller",
-	dependencies: ["scramjet-esmodule"],
+	dependencies: ["scramjet-esmodule", "scramjet-types"],
 	entry: {
 		api: join(controllerdir, "src/index.ts"),
 		inject: join(controllerdir, "src/inject.ts"),
@@ -622,6 +636,7 @@ const utilsModuleConfig = createGenericConfig({
 
 const bootstrapConfig = createGenericConfig({
 	name: "scramjet-bootstrap",
+	dependencies: ["scramjet-types", "scramjet-controller"],
 	entry: {
 		server: join(bootstrapdir, "src/server.ts"),
 		client: join(bootstrapdir, "src/client.ts"),

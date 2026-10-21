@@ -1,14 +1,26 @@
-import { getFlag, ScramjetContext } from "@/shared";
+import {
+	NativeDataView,
+	NativeError,
+	NativeRegExp,
+	NativeSharedArrayBuffer,
+	NativeSymbol,
+	NativeTextDecoder,
+	NativeUint8Array,
+	Nativeconsole,
+	Nativeperformance,
+} from "@/shared/snapshot";
+import { ScramjetContext } from "@/shared";
 import { rewriteUrl, unrewriteUrl, URLMeta } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
 
 export default function (client: ScramjetClient, self: Self) {
+	const { DOMParser: NativeDOMParser } = self;
 	let worker;
 	// if (self.Worker && flagEnabled("syncxhr", client.url)) {
 	// 	worker = client.natives.construct("Worker", config.files.sync);
 	// }
-	const ARGS = Symbol("xhr original args");
-	const HEADERS = Symbol("xhr headers");
+	const ARGS = NativeSymbol("xhr original args");
+	const HEADERS = NativeSymbol("xhr headers");
 
 	client.Proxy("XMLHttpRequest.prototype.open", {
 		apply(ctx) {
@@ -30,8 +42,8 @@ export default function (client: ScramjetClient, self: Self) {
 			const args = ctx.this[ARGS];
 			if (!args || args[2]) return;
 
-			if (!client.getFlag("syncxhr")) {
-				console.warn("ignoring request - sync xhr disabled in flags");
+			if (!client.flagEnabled("syncxhr")) {
+				Nativeconsole.warn("ignoring request - sync xhr disabled in flags");
 
 				return ctx.return(undefined);
 			}
@@ -41,8 +53,10 @@ export default function (client: ScramjetClient, self: Self) {
 			// there's a nice way of polyfilling this though, we can spin on an atomic using sharedarraybuffer. this will maintain the sync behavior
 
 			//@ts-ignore
-			const sab = new SharedArrayBuffer(1024, { maxByteLength: 2147483647 });
-			const view = new DataView(sab);
+			const sab = new NativeSharedArrayBuffer(1024, {
+				maxByteLength: 2147483647,
+			});
+			const view = new NativeDataView(sab);
 
 			client.natives.call("Worker.prototype.postMessage", worker, {
 				sab,
@@ -51,10 +65,10 @@ export default function (client: ScramjetClient, self: Self) {
 				body: ctx.args[0],
 			});
 
-			const now = performance.now();
+			const now = Nativeperformance.now();
 			while (view.getUint8(0) === 0) {
-				if (performance.now() - now > 1000) {
-					throw new Error("xhr timeout");
+				if (Nativeperformance.now() - now > 1000) {
+					throw new NativeError("xhr timeout");
 				}
 				/* spin */
 			}
@@ -62,18 +76,18 @@ export default function (client: ScramjetClient, self: Self) {
 			const status = view.getUint16(1);
 			const headersLength = view.getUint32(3);
 
-			const headersab = new Uint8Array(headersLength);
-			headersab.set(new Uint8Array(sab.slice(7, 7 + headersLength)));
-			const headers = new TextDecoder().decode(headersab);
+			const headersab = new NativeUint8Array(headersLength);
+			headersab.set(new NativeUint8Array(sab.slice(7, 7 + headersLength)));
+			const headers = new NativeTextDecoder().decode(headersab);
 
 			const bodyLength = view.getUint32(7 + headersLength);
-			const bodyab = new Uint8Array(bodyLength);
+			const bodyab = new NativeUint8Array(bodyLength);
 			bodyab.set(
-				new Uint8Array(
+				new NativeUint8Array(
 					sab.slice(11 + headersLength, 11 + headersLength + bodyLength)
 				)
 			);
-			const body = new TextDecoder().decode(bodyab);
+			const body = new NativeTextDecoder().decode(bodyab);
 
 			// these should be using proxies to not leak scram strings but who cares
 			client.RawTrap(ctx.this, "status", {
@@ -95,7 +109,7 @@ export default function (client: ScramjetClient, self: Self) {
 			});
 			client.RawTrap(ctx.this, "responseXML", {
 				get() {
-					const parser = new DOMParser();
+					const parser = new NativeDOMParser();
 
 					return parser.parseFromString(body, "text/xml");
 				},
@@ -108,7 +122,7 @@ export default function (client: ScramjetClient, self: Self) {
 			client.RawTrap(ctx.this, "getResponseHeader", {
 				get() {
 					return (header: string) => {
-						const re = new RegExp(`^${header}: (.*)$`, "m");
+						const re = new NativeRegExp(`^${header}: (.*)$`, "m");
 						const match = re.exec(headers);
 
 						return match ? match[1] : null;
