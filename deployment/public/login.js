@@ -26,8 +26,11 @@ if (client.load()) {
 	button.disabled = true;
 	message.textContent = "正在恢复访问…";
 	try {
-		await client.restore();
-		enter();
+		if (await client.restore()) enter();
+		else {
+			message.textContent = "";
+			button.disabled = false;
+		}
 	} catch (error) {
 		message.textContent = error.message;
 		button.disabled = false;
