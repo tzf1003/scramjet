@@ -8,6 +8,7 @@
 		"skipLibCheck": true,
 		/* Bundler mode */
 		"moduleResolution": "bundler",
+		"preserveSymlinks": true,
 		"allowImportingTsExtensions": true,
 		"verbatimModuleSyntax": true,
 		"moduleDetection": "force",
@@ -18,9 +19,7 @@
 		"noUnusedParameters": false,
 		"erasableSyntaxOnly": false,
 		"noFallthroughCasesInSwitch": true,
-		"noUncheckedSideEffectImports": true,
-		"jsx": "react-jsx",
-		"jsxImportSource": "dreamland"
+		"noUncheckedSideEffectImports": true
 	},
 	"include": ["src"]
 }

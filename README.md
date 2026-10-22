@@ -55,29 +55,47 @@ You can run the Scramjet dev server when running this command at the root
 pnpm dev
 ```
 
-The demo page for scramjet should now be running at <http://localhost:4141> and should rebuild upon a file being changed (excluding the rewriter).
+The proxy frontend runs on port 4141 and rebuilds when a file changes (excluding
+the rewriter). It opens the target website from the request hostname in a
+full-screen frame. For example:
+
+```text
+https://baidu.com.derp.xs2api.com:8443/test/?q=hello#section
+→ https://baidu.com/test/?q=hello#section
+```
+
+The proxy port belongs to the proxy endpoint; targets default to HTTPS on their
+standard port. Configure the base hostname with `VITE_PROXY_DOMAIN` (default:
+`derp.xs2api.com`). For local development:
+
+```sh
+VITE_PROXY_DOMAIN=localhost pnpm dev
+# Open http://example.com.localhost:4141/
+```
+
+See [wildcard proxy deployment](docs/wildcard-proxy.md) for DNS, certificates,
+WebSocket forwarding and refresh routing.
 
 ### Browser environment profiles
 
-The demo starts with the Japan preset (`Asia/Tokyo`, `ja-JP, ja, en`). Open
-**Flag Editor → Browser environment** to customize it, then click
-**Apply environment** and reload the proxied page. Settings persist in this
-browser. Empty fields restore the corresponding browser default.
+The proxy frontend starts with the Japan preset (`Asia/Tokyo`, `ja-JP, ja, en`).
+Its default profile is configured in `packages/demo/src/environment.ts`.
+Existing browser profiles saved under `scramjet-environment` remain supported.
 
 Integrations opt in through the controller; the core library defaults to the
 native browser environment:
 
 ```ts
 const controller = new Controller({
-	// ...existing initialization...
-	scramjetConfig: {
-		environment: {
-			timezone: "Asia/Tokyo",
-			locale: "ja-JP",
-			languages: ["ja-JP", "ja", "en"],
-			protectFonts: true,
-		},
-	},
+  // ...existing initialization...
+  scramjetConfig: {
+    environment: {
+      timezone: "Asia/Tokyo",
+      locale: "ja-JP",
+      languages: ["ja-JP", "ja", "en"],
+      protectFonts: true,
+    },
+  },
 });
 ```
 
