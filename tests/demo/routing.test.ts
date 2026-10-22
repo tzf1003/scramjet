@@ -7,6 +7,12 @@ import {
 	shellUrl,
 	TARGET_QUERY,
 } from "../../packages/demo/src/routing.ts";
+import {
+	consumeHandoff,
+	destinationCookies,
+	isProxyPeer,
+	transferableCookies,
+} from "../../packages/demo/src/handoff.ts";
 
 const base = "derp.xs2api.com";
 const entry = new URL(`https://baidu-com.${base}:8443/test/?q=a%2Fb#section`);
@@ -62,6 +68,244 @@ test("new-tab links map to wildcard hosts with the proxy scheme and port", () =>
 		resolveTarget(url, base).href,
 		"https://www.example.com/a?b=c#d"
 	);
+});
+
+test("HTTPS target ports are encoded separately from the proxy port", () => {
+	for (const port of ["1", "9443", "65535"]) {
+		const target = new URL(`https://example.com:${port}/test/?q=a%2Fb#part`);
+		const url = proxyUrl(target, entry, base);
+		assert.equal(
+			url.href,
+			`https://example-com-${port}.${base}:8443/test/?q=a%2Fb#part`
+		);
+		assert.equal(resolveTarget(url, base).href, target.href);
+	}
+	assert.equal(
+		resolveTarget(new URL(`https://example-com-443.${base}/`), base).href,
+		"https://example.com/"
+	);
+	for (const label of [
+		"example-com-0",
+		"example-com-65536",
+		"example-com-09443",
+	]) {
+		assert.throws(() =>
+			resolveTarget(new URL(`https://${label}.${base}/`), base)
+		);
+	}
+	for (const hostname of ["my-9443.com", "my--9443.com", "a123.example"]) {
+		const target = new URL(`https://${hostname}:9443/test/`);
+		assert.equal(
+			resolveTarget(proxyUrl(target, entry, base), base).href,
+			target.href
+		);
+	}
+	const boundary = new URL(`https://${"a".repeat(54)}.com:9443/`);
+	assert.equal(
+		proxyUrl(boundary, entry, base).hostname.split(".")[0].length,
+		63
+	);
+	const long = new URL(`https://${"a".repeat(55)}.com:9443/`);
+	assert.equal(
+		proxyUrl(long, entry, base).searchParams.get(TARGET_QUERY),
+		long.href
+	);
+});
+
+test("numeric IP addresses use an unambiguous explicit target", () => {
+	for (const value of [
+		"https://127.0.0.1/",
+		"https://127.0.0.1:9443/",
+		"https://[::1]:9443/",
+	]) {
+		const target = new URL(value);
+		const url = proxyUrl(target, entry, base);
+		assert.equal(url.searchParams.get(TARGET_QUERY), target.href);
+		assert.equal(resolveTarget(url, base).href, target.href);
+	}
+});
+
+test("numeric hostname text stays distinct from HTTPS port suffixes", () => {
+	for (const [value, label] of [
+		["https://foo:9443/", "foo-9443"],
+		["https://foo-9443/", "foo--9443"],
+		["https://foo-9443:8443/", "foo--9443-8443"],
+	]) {
+		const target = new URL(value);
+		const publicUrl = proxyUrl(target, entry, base);
+		assert.equal(publicUrl.hostname, `${label}.${base}`);
+		assert.equal(resolveTarget(publicUrl, base).href, target.href);
+	}
+	// WHATWG HTTP(S) parsing treats numeric final labels as IPv4 candidates.
+	assert.throws(() => new URL("https://foo.9443/"), TypeError);
+});
+
+test("handoff peers require the configured suffix, scheme and proxy port", () => {
+	assert.equal(
+		isProxyPeer(`https://accounts-example-com.${base}:8443`, entry, base),
+		true
+	);
+	for (const origin of [
+		`https://accounts-example-com.${base}`,
+		`http://accounts-example-com.${base}:8443`,
+		`https://accounts-example-com.${base}.evil.test:8443`,
+		`https://${base}:8443`,
+		`https://accounts-example-com.${base}:8443/path`,
+		"null",
+	])
+		assert.equal(isProxyPeer(origin, entry, base), false);
+});
+
+test("cookie handoff includes only destination domain cookies", () => {
+	const cookie = (domain: string, hostOnly: boolean) => ({
+		domain,
+		hostOnly,
+		name: "session",
+		value: "secret",
+		path: "/",
+		httpOnly: true,
+	});
+	const cookies = {
+		".accounts.example.com@/@session": cookie(".accounts.example.com", true),
+		".example.com@/@session": cookie(".example.com", false),
+		".other.example.com@/@session": cookie(".other.example.com", true),
+		".notexample.com@/@session": cookie(".notexample.com", false),
+		invalid: { domain: ".example.com" },
+	};
+	assert.deepEqual(
+		JSON.parse(
+			destinationCookies(
+				JSON.stringify(cookies),
+				new URL("https://accounts.example.com/")
+			)
+		),
+		{
+			".accounts.example.com@/@session":
+				cookies[".accounts.example.com@/@session"],
+			".example.com@/@session": cookies[".example.com@/@session"],
+		}
+	);
+	assert.equal(
+		destinationCookies(
+			JSON.stringify({
+				".example.com@/@session": cookie(".example.com", true),
+			}),
+			new URL("https://accounts.example.com/")
+		),
+		"{}"
+	);
+	assert.equal(
+		transferableCookies(
+			JSON.stringify(cookies),
+			new URL("https://unrelated.test/"),
+			new URL("https://accounts.example.com/")
+		),
+		"{}"
+	);
+});
+
+test("cookie handoff rejects ICANN and private public suffix scopes", () => {
+	for (const [source, target, suffix] of [
+		["attacker.com", "victim.com", "com"],
+		["attacker.co.uk", "victim.co.uk", "co.uk"],
+		["attacker.github.io", "victim.github.io", "github.io"],
+	]) {
+		const cookies = JSON.stringify({
+			[`.${suffix}@/@session`]: {
+				domain: `.${suffix}`,
+				name: "session",
+				value: "injected",
+				path: "/",
+			},
+		});
+		assert.equal(
+			transferableCookies(
+				cookies,
+				new URL(`https://${source}`),
+				new URL(`https://${target}`)
+			),
+			"{}"
+		);
+		assert.equal(
+			destinationCookies(cookies, new URL(`https://${target}`)),
+			"{}"
+		);
+	}
+});
+
+test("handoff state is scoped to one target, expires and is consumed once", () => {
+	const descriptor = Object.getOwnPropertyDescriptor(
+		globalThis,
+		"sessionStorage"
+	);
+	let stored: string | null = null;
+	Object.defineProperty(globalThis, "sessionStorage", {
+		configurable: true,
+		value: {
+			getItem: () => stored,
+			removeItem: () => {
+				stored = null;
+			},
+		},
+	});
+	try {
+		const state = {
+			source: entry.origin,
+			target: resolveTarget(entry, base).href,
+			cookies: "{}",
+			referrer: "https://baidu.com/",
+			initiator: "https://baidu.com",
+			fetchSite: "same-origin" as const,
+			crossSiteRedirect: false,
+			createdAt: Date.now(),
+		};
+		stored = JSON.stringify(state);
+		assert.deepEqual(consumeHandoff(entry, base), state);
+		assert.equal(consumeHandoff(entry, base), undefined);
+		const destination = new URL(
+			`https://accounts-example-com.${base}:8443/login`
+		);
+		for (const referrer of ["", "https://accounts.example.com/private"]) {
+			stored = JSON.stringify({
+				...state,
+				target: "https://accounts.example.com/login",
+				referrer,
+				initiator: "https://accounts.example.com",
+				fetchSite: "same-origin",
+			});
+			const verified = consumeHandoff(destination, base)!;
+			assert.equal(verified.initiator, "https://baidu.com");
+			assert.equal(verified.referrer, referrer ? "https://baidu.com/" : "");
+			assert.equal(verified.fetchSite, "cross-site");
+			assert.equal(verified.crossSiteRedirect, true);
+		}
+		// Separate tenants on private suffixes are cross-site, too.
+		stored = JSON.stringify({
+			...state,
+			source: `https://attacker-github-io.${base}:8443`,
+			target: "https://victim.github.io/",
+		});
+		assert.equal(
+			consumeHandoff(new URL(`https://victim-github-io.${base}:8443/`), base)
+				?.crossSiteRedirect,
+			true
+		);
+		for (const patch of [
+			{ target: "https://baidu.com/other" },
+			{ createdAt: Date.now() - 31_000 },
+			{ createdAt: Date.now() + 31_000 },
+			{ cookies: '{"invalid":{"domain":".evil.example"}}' },
+			{ initiator: "ftp://example.com" },
+		]) {
+			stored = JSON.stringify({ ...state, ...patch });
+			assert.equal(consumeHandoff(entry, base), undefined);
+			assert.equal(stored, null);
+		}
+	} finally {
+		if (descriptor)
+			Object.defineProperty(globalThis, "sessionStorage", descriptor);
+		else Reflect.deleteProperty(globalThis, "sessionStorage");
+	}
 });
 
 test("same-origin navigation keeps clean public paths", () => {
