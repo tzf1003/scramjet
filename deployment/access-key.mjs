@@ -7,10 +7,10 @@ export const COOKIE_MAX_AGE = 400 * 24 * 60 * 60;
 export function createAccessControl(accessKey) {
 	if (
 		typeof accessKey !== "string" ||
-		accessKey.length < 24 ||
+		accessKey.length < 8 ||
 		accessKey.length > 512
 	) {
-		throw new Error("Access key must contain 24 to 512 characters");
+		throw new Error("Access key must contain 8 to 512 characters");
 	}
 	const expected = crypto.createHash("sha256").update(accessKey).digest();
 	function valid(candidate) {

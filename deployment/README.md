@@ -24,7 +24,7 @@ session to the existing issuer. The access key is not returned by its APIs.
 
 ## Runtime
 
-- `ACCESS_KEY_FILE`: mounted key file, 24–512 characters. Existing deployments
+- `ACCESS_KEY_FILE`: mounted key file, 8–512 characters. Existing deployments
   can keep their original key value. The compatibility default reads
   `/run/secrets/admin-password`; new releases use `/run/secrets/access-key`.
 - The Node container runs as UID/GID 1000. Preserve the existing secret file's

@@ -20,7 +20,7 @@ import {
 	returnTarget,
 } from "../../deployment/public/access-key-client.js";
 
-const key = crypto.randomBytes(32).toString("base64url");
+const key = crypto.randomBytes(6).toString("base64url");
 test("forwarded client identity requires a trusted TCP peer and a single valid address", () => {
 	const request = (remoteAddress, value) => ({
 		socket: { remoteAddress },
