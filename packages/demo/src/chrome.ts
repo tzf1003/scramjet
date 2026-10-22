@@ -23,12 +23,23 @@ export function isTransparent(color: string): boolean {
 	return parseFloat(alpha[1]) === 0;
 }
 
+// theme-color comes from the proxied page and ends up in the shell's CSS, so
+// it must be a plain color: url() or var() would make the shell itself fetch
+// a page-chosen address, bypassing the proxy.
+export function isPlainColor(value: string): boolean {
+	if (/\b(?:url|var|attr|env|image|image-set|element|paint)\(/i.test(value))
+		return false;
+	return typeof CSS !== "undefined" && CSS.supports("color", value);
+}
+
 export function pickSurfaceColor(
 	sample: SurfaceSample,
-	matches: (media: string) => boolean
+	matches: (media: string) => boolean,
+	isColor: (value: string) => boolean = isPlainColor
 ): string | null {
 	for (const { content, media } of sample.themeColors) {
-		if (!content.trim() || isTransparent(content)) continue;
+		if (!content.trim() || isTransparent(content) || !isColor(content.trim()))
+			continue;
 		if (media && !matches(media)) continue;
 		return content.trim();
 	}
