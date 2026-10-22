@@ -118,6 +118,28 @@ test("a domain-scoped cookie is shared across subdomains and still honours host-
 		hostOnly.authenticated({ headers: { cookie: shared.split(";")[0] } }),
 		false
 	);
+	assert.ok(
+		hostOnly
+			.cookie()
+			.some(
+				(value) =>
+					value.startsWith(`${LOGOUT_COOKIE}=; `) && value.includes("Max-Age=0")
+			)
+	);
+	// A shared logout invalidates host-only cookies still held by other hosts.
+	const legacyCookie = createAccessControl(key).cookie()[0].split(";")[0];
+	assert.equal(
+		access.authenticated({
+			headers: { cookie: `${legacyCookie}; ${LOGOUT_COOKIE}=1` },
+		}),
+		false
+	);
+	assert.equal(
+		access.authenticated({
+			headers: { cookie: `${shared.split(";")[0]}; ${LOGOUT_COOKIE}=1` },
+		}),
+		true
+	);
 	assert.equal(
 		access.authenticated({ headers: { cookie: shared.split(";")[0] } }),
 		true

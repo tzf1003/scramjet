@@ -39,7 +39,12 @@ export function createAccessControl(
 	const accepted = shared ? [ACCESS_COOKIE, HOST_ACCESS_COOKIE] : [name];
 	function authenticated(req) {
 		const parts = (req.headers.cookie || "").split(";").map((p) => p.trim());
-		return accepted.some((cookieName) => {
+		// After a shared logout, host-only cookies left on other hosts are dead.
+		const names =
+			shared && parts.some((part) => part.startsWith(LOGOUT_COOKIE + "="))
+				? [ACCESS_COOKIE]
+				: accepted;
+		return names.some((cookieName) => {
 			const cookies = parts.filter((part) => part.startsWith(cookieName + "="));
 			if (cookies.length !== 1) return false;
 			try {
@@ -69,7 +74,11 @@ export function createAccessControl(
 				expire(LOGOUT_COOKIE, markerAttributes),
 			];
 		return domain
-			? [value, expire(ACCESS_COOKIE, attributes + scope)]
+			? [
+					value,
+					expire(ACCESS_COOKIE, attributes + scope),
+					expire(LOGOUT_COOKIE, markerAttributes),
+				]
 			: [value];
 	}
 	function clearCookies() {
