@@ -22,22 +22,37 @@ const access = createAccessControl(
 );
 if (!secret || secret.length < 32)
 	throw new Error("Invalid deployment secrets");
-const proxyDomain = env.PROXY_DOMAIN;
+const proxyDomain = (env.PROXY_DOMAIN || "")
+	.trim()
+	.toLowerCase()
+	.replace(/^\*\./, "")
+	.replace(/\.$/, "");
+const gatewayHost = (env.GATEWAY_HOST || proxyDomain).trim().toLowerCase();
+const validHostname = (hostname) =>
+	hostname.length > 0 &&
+	hostname.length <= 253 &&
+	hostname
+		.split(".")
+		.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
+if (
+	!validHostname(proxyDomain) ||
+	!validHostname(gatewayHost) ||
+	(gatewayHost !== proxyDomain && !gatewayHost.endsWith("." + proxyDomain))
+)
+	throw new Error("Gateway host must belong to the configured proxy domain");
 function requestOrigin(req) {
 	try {
 		const url = new URL("https://" + req.headers.host);
 		if (
+			url.username ||
+			url.password ||
 			url.port ||
+			url.host !== req.headers.host?.toLowerCase() ||
 			(url.hostname !== proxyDomain &&
 				!url.hostname.endsWith("." + proxyDomain))
 		)
 			return null;
-		if (
-			!url.hostname
-				.split(".")
-				.every((x) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(x))
-		)
-			return null;
+		if (!validHostname(url.hostname)) return null;
 		return url.origin;
 	} catch {
 		return null;
@@ -203,7 +218,7 @@ const server = http.createServer(async (req, res) => {
 		const url = new URL(req.url, origin);
 		const name = decodeURIComponent(url.pathname);
 		if (
-			url.hostname === proxyDomain &&
+			(url.hostname === proxyDomain || url.hostname === gatewayHost) &&
 			!url.searchParams.has("__scramjet_url") &&
 			!/^\/(?:scramjet|controller|assets)\//.test(name) &&
 			![

@@ -12,6 +12,9 @@ import {
 import { CatchEscapedLinksPlugin } from "@mercuryworkshop/scramjet-utils";
 import {
 	DEFAULT_PROXY_DOMAIN,
+	DEFAULT_GATEWAY_HOST,
+	isGatewayEntry,
+	normalizeProxyDomain,
 	resolveTarget,
 	proxyUrl,
 	shellUrl,
@@ -57,17 +60,23 @@ async function registerWorker(): Promise<ServiceWorker> {
 
 async function main() {
 	const entry = new URL(location.href);
-	const base = import.meta.env.VITE_PROXY_DOMAIN || DEFAULT_PROXY_DOMAIN;
+	const base = normalizeProxyDomain(
+		import.meta.env.VITE_PROXY_DOMAIN || DEFAULT_PROXY_DOMAIN
+	);
 	const gatewayAccess = import.meta.env.VITE_GATEWAY_ACCESS === "1";
-	const gatewayApex = gatewayAccess && entry.hostname === base;
-	if (!gatewayApex && receiveHandoff(entry, base)) return;
+	const gatewayHost =
+		import.meta.env.VITE_GATEWAY_HOST ||
+		(import.meta.env.VITE_PROXY_DOMAIN ? base : DEFAULT_GATEWAY_HOST);
+	const gatewayEntry =
+		gatewayAccess && isGatewayEntry(entry, base, gatewayHost);
+	if (!gatewayEntry && receiveHandoff(entry, base)) return;
 	const routingEntry = new URL(entry);
-	if (gatewayApex) routingEntry.hostname = "go." + base;
+	if (gatewayEntry) routingEntry.hostname = "go." + base;
 	const target = resolveTarget(routingEntry, base);
-	const originTarget = gatewayApex
+	const originTarget = gatewayEntry
 		? null
 		: resolveTarget(new URL(entry.origin), base);
-	const handoff = gatewayApex ? null : consumeHandoff(entry, base);
+	const handoff = gatewayEntry ? null : consumeHandoff(entry, base);
 	document.title = target.hostname;
 
 	const serviceworker = await registerWorker();
@@ -130,7 +139,7 @@ async function main() {
 		plugins: [
 			watcher,
 			new CatchEscapedLinksPlugin((url) =>
-				gatewayApex ? shellUrl(url, entry, base) : proxyUrl(url, entry, base)
+				gatewayEntry ? shellUrl(url, entry, base) : proxyUrl(url, entry, base)
 			),
 		],
 	});

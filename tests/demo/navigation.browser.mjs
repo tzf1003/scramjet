@@ -11,6 +11,8 @@ const out =
 	resolve(tmpdir(), "scramjet-navigation-browser");
 await mkdir(out, { recursive: true });
 process.env.VITE_PROXY_DOMAIN = "localhost";
+process.env.VITE_GATEWAY_HOST = "my.localhost";
+process.env.VITE_GATEWAY_ACCESS = "1";
 const requests = [];
 const fixtureTransport = `export default class FixtureTransport {
  ready=true;
@@ -45,6 +47,10 @@ const vite = await createServer({
 				if (id === "\0fixture-transport") return fixtureTransport;
 			},
 			configureServer(server) {
+				server.middlewares.use("/api/config", (_req, res) => {
+					res.setHeader("Content-Type", "application/json");
+					res.end(JSON.stringify({ webrtc: { mode: "off", iceServers: [] } }));
+				});
 				server.middlewares.use("/__fixture", async (req, res) => {
 					let text = "";
 					for await (const chunk of req) text += chunk;
@@ -382,6 +388,34 @@ try {
 	}
 	results.push(
 		"foreign explicit targets retain their controller and actual cross-site context"
+	);
+	const portal = new URL(`http://my.localhost:${port}/`);
+	portal.searchParams.set(
+		"__scramjet_url",
+		"https://example.com/start?q=portal#part"
+	);
+	await page.goto(portal.href);
+	await page
+		.frameLocator("#app > iframe")
+		.locator("#path")
+		.filter({ hasText: "example.com/start?q=portal" })
+		.waitFor();
+	assert.equal(new URL(page.url()).hostname, "my.localhost");
+	await page.reload();
+	await page.frameLocator("#app > iframe").locator("#path").waitFor();
+	await page.frameLocator("#app > iframe").locator("#other").click();
+	await page
+		.frameLocator("#app > iframe")
+		.locator("#path")
+		.filter({ hasText: "unrelated.test/home" })
+		.waitFor();
+	assert.equal(new URL(page.url()).hostname, "my.localhost");
+	assert.equal(
+		new URL(page.url()).searchParams.get("__scramjet_url"),
+		"https://unrelated.test/home"
+	);
+	results.push(
+		"separate portal hostname retains explicit targets across refresh and navigation"
 	);
 	await page.screenshot({ path: out + "/navigation.png" });
 	assert.deepEqual(errors, []);

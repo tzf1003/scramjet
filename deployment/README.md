@@ -30,8 +30,11 @@ session to the existing issuer. The access key is not returned by its APIs.
 - The Node container runs as UID/GID 1000. Preserve the existing secret file's
   ownership and permissions when migrating it (the current deployment uses
   `root:1000`, mode `0640`), and verify readability before switching releases.
-- `CREDENTIAL_SESSION_SECRET`, `TURN_STATIC_AUTH_SECRET`, `TURN_URLS` and
-  `PROXY_DOMAIN`: retain the deployment's existing values.
+- `CREDENTIAL_SESSION_SECRET`, `TURN_STATIC_AUTH_SECRET` and `TURN_URLS`:
+  retain the deployment's existing values.
+- `PROXY_DOMAIN`: base domain for mapped target hosts, such as `xs2api.com`.
+  A leading `*.` is accepted. `GATEWAY_HOST` selects the portal hostname,
+  such as `my.xs2api.com`, and defaults to the base domain.
 - Restart the app after rotating the access key; this also closes existing
   proxy sockets. HTTPS must be provided by the deployment gateway.
 - `TRUSTED_PROXY_CIDRS`: comma-separated CIDRs of trusted TCP peers. The default
@@ -43,9 +46,20 @@ session to the existing issuer. The access key is not returned by its APIs.
   `package-release.py --trusted-proxy-ip <IPv4>` pins the gateway container's
   address and configures that exact `/32` peer after this edge check.
 
-The production frontend uses `VITE_GATEWAY_ACCESS=1` and the configured
-`VITE_PROXY_DOMAIN`. It loads `/api/config` and supports the standard hostname
-with `__scramjet_url` as well as wildcard hostnames.
+The production frontend uses `VITE_GATEWAY_ACCESS=1`, `VITE_PROXY_DOMAIN`
+and `VITE_GATEWAY_HOST` matching the server configuration. It loads
+`/api/config`. The portal and base domain show the home page and accept
+`__scramjet_url` targets. Sibling hosts map directly to target sites:
+`https://example-com.xs2api.com/path?q=1` opens
+`https://example.com/path?q=1`. Literal target hyphens are doubled, and
+non-default HTTPS ports use a numeric suffix, such as
+`accounts-example-com-9443.xs2api.com`.
+
+Configure wildcard DNS and HTTPS routing for `*.xs2api.com` at the public
+edge. Its certificate must be accepted by the upstream TLS client. The
+packager updates the internal gateway hostname; the public edge must use
+the same base domain. Each mapped hostname has its own host-only cookie
+and saved key, so the first visit to a new hostname requires the access key.
 
 Camera, microphone and screen capture are enabled in the proxy iframe. The
 browser controls device and screen permission prompts. Browser permissions
@@ -61,8 +75,8 @@ package's lockfile supplies its two runtime dependencies.
 ```sh
 rtk npm ci --prefix deployment --ignore-scripts
 rtk node --test tests/deployment/access-key.test.mjs
-rtk env VITE_GATEWAY_ACCESS=1 VITE_PROXY_DOMAIN=my.xs2api.com pnpm --dir packages/demo build
-rtk python3 deployment/package-release.py --base /path/to/previous/release --frontend /path/to/frontend/dist --output /path/to/new/output --release-id access-key-release
+rtk env VITE_GATEWAY_ACCESS=1 VITE_PROXY_DOMAIN=xs2api.com VITE_GATEWAY_HOST=my.xs2api.com pnpm --dir packages/demo build
+rtk python3 deployment/package-release.py --base /path/to/previous/release --frontend /path/to/frontend/dist --output /path/to/new/output --release-id wildcard-release --proxy-domain xs2api.com --gateway-host my.xs2api.com
 ```
 
 The packager retains the previous gateway/TURN configuration, writes a release

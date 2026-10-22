@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
 	normalizeProxyDomain,
+	isGatewayEntry,
 	resolveTarget,
 	proxyUrl,
 	shellUrl,
@@ -14,7 +15,7 @@ import {
 	transferableCookies,
 } from "../../packages/demo/src/handoff.ts";
 
-const base = "derp.xs2api.com";
+const base = "xs2api.com";
 const entry = new URL(`https://baidu-com.${base}:8443/test/?q=a%2Fb#section`);
 
 test("flattened wildcard entry preserves path, query and hash, independently of proxy port", () => {
@@ -58,7 +59,28 @@ test("suffix matching rejects apex and lookalike hosts", () => {
 	]) {
 		assert.throws(() => normalizeProxyDomain(domain));
 	}
-	assert.equal(normalizeProxyDomain("DERP.XS2API.COM."), base);
+	assert.equal(normalizeProxyDomain("XS2API.COM."), base);
+	assert.equal(normalizeProxyDomain("*.XS2API.COM"), base);
+});
+
+test("portal and apex entries are distinct from mapped target hosts", () => {
+	for (const host of ["xs2api.com", "my.xs2api.com"])
+		assert.equal(
+			isGatewayEntry(new URL(`https://${host}/`), base, "my.xs2api.com"),
+			true
+		);
+	for (const host of ["example-com.xs2api.com", "my.xs2api.com.evil.test"])
+		assert.equal(
+			isGatewayEntry(new URL(`https://${host}/`), base, "my.xs2api.com"),
+			false
+		);
+	assert.equal(
+		resolveTarget(
+			new URL("https://example-com.xs2api.com/hello?q=1#part"),
+			"*.xs2api.com"
+		).href,
+		"https://example.com/hello?q=1#part"
+	);
 });
 
 test("new-tab links map to wildcard hosts with the proxy scheme and port", () => {
