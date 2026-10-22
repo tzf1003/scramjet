@@ -9,6 +9,10 @@
 目标域名原有的连字符编码为双连字符：`my-site.com` 对应
 `my--site-com.derp.xs2api.com`。国际化域名先使用 Punycode，再按同样规则编码；
 编码结果以浏览器保留的 `xn--` 开头时，生成的链接使用显式目标参数。
+HTTPS 目标的非标准端口附加在标签末尾：`example.com:9443` 对应
+`example-com-9443.derp.xs2api.com`，代理入口仍可使用 `:8443`。数字后缀专用于
+目标端口，IPv4/IPv6 地址使用显式目标参数。端口取值为 1–65535，HTTPS 默认端口
+443 省略。编码后的完整标签仍须满足 63 字符限制。
 入口解析和新标签页链接生成使用相同规则。旧的多级入口需改为扁平化格式；
 更换入口域名后，浏览器存储按新域名独立保存。
 
@@ -88,25 +92,56 @@ server {
 
 入口保留 `/sw.js`、`/icon.png`、`/scramjet/`、`/controller/`、`/assets/` 和
 `/wisp/` 作为代理资源路径；开发时还保留 `/src/`、`/node_modules/`、`/@vite/`、
-`/@id/` 和 `/@fs/`。访问目标站这些路径时，可使用下面的显式目标参数入口。
+`/@id/` 和 `/@fs/`。`/__scramjet_handoff` 用于跨域导航状态交接。访问目标站
+这些路径时，使用下面的显式目标参数入口，避免与代理运行文件冲突。
 
 ## 页面跳转与刷新
 
 同一目标主机内跳转时，地址栏同步目标路径。站内页面历史由浏览器的 iframe
-历史处理，浏览器返回/前进可正常使用。跨站跳转保持当前控制器运行，以保留当前
-表单请求、Cookie 和代理连接，地址栏使用 `__scramjet_url` 参数记录完整目标地址，
-刷新可恢复当前页面。例如：
+历史处理，浏览器返回/前进可正常使用。普通 HTTPS 跨站 GET 导航会切换到目标的
+扁平化代理域名。例如，从百度入口点击 `https://accounts.example.com/login`：
 
 ```text
-https://baidu-com.derp.xs2api.com:8443/?__scramjet_url=https%3A%2F%2Faccounts.example.com%2Flogin
+https://accounts-example-com.derp.xs2api.com:8443/login
 ```
 
-新标签页中的标准 HTTPS 链接使用对应的目标泛域名。HTTP、IPv6、非标准目标端口
-和含保留参数 `__scramjet_url` 的目标地址使用显式目标参数，以保留原始 URL。
-扁平化后超过 DNS 单标签 63 字符限制或完整域名长度限制的目标也使用该参数，
-入口保留当前有效的代理域名。
+HTTPS 自定义目标端口也直接编码到域名，例如：
+
+```text
+https://example-com-9443.derp.xs2api.com:8443/test/
+→ https://example.com:9443/test/
+```
+
+切换域名前，代理通过目标域名下的隐藏入口交接当前标签页的导航状态；仅传递
+同时适用于来源和目标域名的 Cookie，保留 HttpOnly 等属性，并合入目标控制器的
+持久化存储。目标入口已有的其他 Cookie 保持其作用域。
+交接消息核验窗口、代理域名、协议、代理端口和随机令牌。状态有效期为 30 秒，
+消费后删除；Cookie 不进入地址栏。首个请求沿用来源和 SameSite 导航上下文。
+`localStorage`、IndexedDB 等网页存储仍按代理域名独立，交接不提供跨标签页的
+持续 Cookie 同步。目标服务器应允许同一代理根域名下的入口相互嵌入，
+并将 `GET /__scramjet_handoff` 回退到同一个 `index.html`。
+
+跨站 POST 表单继续保留原控制器和请求体，地址栏以 `__scramjet_url` 参数记录
+目标。HTTP、IP 地址、保留资源路径、含保留参数的目标地址，以及超长或无法编码的
+域名也使用该参数。交接受到浏览器存储限制、入口策略阻止或超时时，同样保留当前
+控制器继续加载；刷新可恢复目标地址。例如：
+
+```text
+https://baidu-com.derp.xs2api.com:8443/?__scramjet_url=http%3A%2F%2Fexample.com%2F
+```
+
+新标签页中的 HTTPS 链接使用目标泛域名及可选目标端口；新标签页使用该代理域名
+已有的浏览器存储。
 该参数只接受 HTTP(S) 绝对地址，且拒绝 URL 内嵌用户名和密码。
-各代理域名的浏览器存储独立，新标签页切换代理域名时登录状态不共享。
 
 根域名本身没有目标主机，访问时显示地址说明。现有环境预设与字体保护继续生效，
 默认配置见 `packages/demo/src/environment.ts`。
+
+## 导航回归验证
+
+`pnpm --dir packages/demo test:proxy` 验证编码、端口和交接状态校验。
+`pnpm --dir packages/demo test:navigation` 使用 Playwright 驱动本机 Chrome，
+验证跨站、端口、刷新、历史、Cookie 作用域、POST 和交接失败后的回退。
+浏览器测试以本地上游响应替代 Wisp 网络传输；Service Worker 和控制器使用实际实现。
+可通过 `BROWSER_CHANNEL` 选择已安装的浏览器通道，`SCRAMJET_NAVIGATION_OUTPUT`
+指定证据目录。CI 复用 runner 自带的 Chrome，并在失败时上传证据。

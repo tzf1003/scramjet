@@ -6,6 +6,7 @@
 	"license": "AGPL-3.0-only",
 	"scripts": {
 		"build": "vite build",
+		"test:navigation": "node ../../tests/demo/navigation.browser.mjs",
 		"test:proxy": "node --experimental-strip-types --test ../../tests/demo/routing.test.ts"
 	},
 	"devDependencies": {

@@ -534,6 +534,20 @@ jobs:
       - name: Typecheck frontend
         run: pnpm exec tsc -p packages/demo/tsconfig.json
 
+      - name: Test proxy browser navigation
+        run: pnpm test:navigation
+        working-directory: packages/demo
+        env:
+          BROWSER_CHANNEL: chrome
+          SCRAMJET_NAVIGATION_OUTPUT: ${{ runner.temp }}/scramjet-navigation-browser
+
+      - name: Upload navigation failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: navigation-browser
+          path: ${{ runner.temp }}/scramjet-navigation-browser
+
       - name: Build Frontend
         run: pnpm build
         working-directory: packages/demo
