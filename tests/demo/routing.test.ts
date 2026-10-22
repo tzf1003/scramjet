@@ -125,6 +125,21 @@ test("numeric IP addresses use an unambiguous explicit target", () => {
 	}
 });
 
+test("numeric hostname text stays distinct from HTTPS port suffixes", () => {
+	for (const [value, label] of [
+		["https://foo:9443/", "foo-9443"],
+		["https://foo-9443/", "foo--9443"],
+		["https://foo-9443:8443/", "foo--9443-8443"],
+	]) {
+		const target = new URL(value);
+		const publicUrl = proxyUrl(target, entry, base);
+		assert.equal(publicUrl.hostname, `${label}.${base}`);
+		assert.equal(resolveTarget(publicUrl, base).href, target.href);
+	}
+	// WHATWG HTTP(S) parsing treats numeric final labels as IPv4 candidates.
+	assert.throws(() => new URL("https://foo.9443/"), TypeError);
+});
+
 test("handoff peers require the configured suffix, scheme and proxy port", () => {
 	assert.equal(
 		isProxyPeer(`https://accounts-example-com.${base}:8443`, entry, base),

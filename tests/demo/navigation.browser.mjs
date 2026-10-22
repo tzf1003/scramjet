@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "vite";
@@ -9,9 +8,7 @@ import { chromium } from "../../packages/runway/node_modules/playwright/index.mj
 const root = resolve(import.meta.dirname, "../..");
 const out =
 	process.env.SCRAMJET_NAVIGATION_OUTPUT ||
-	(existsSync("/Volumes/1T")
-		? "/Volumes/1T/scramjet/verification/navigation-browser"
-		: resolve(tmpdir(), "scramjet-navigation-browser"));
+	resolve(tmpdir(), "scramjet-navigation-browser");
 await mkdir(out, { recursive: true });
 process.env.VITE_PROXY_DOMAIN = "localhost";
 const requests = [];
