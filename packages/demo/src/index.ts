@@ -118,6 +118,9 @@ async function main() {
 			const sequence = ++navigation;
 			handoffAbort?.abort();
 			if (request.method !== "GET") return;
+			// A fallback can display another logical origin inside this proxy shell.
+			// Keep its controller: this shell cannot authenticate that document's origin.
+			if (currentTarget.origin !== originTarget.origin) return;
 			const destination = proxyUrl(parsed.url, entry, base);
 			if (destination.origin === entry.origin) return;
 			handoffAbort = new AbortController();

@@ -112,6 +112,34 @@ async function reset() {
 	await page.goto(start);
 	await page.frameLocator("#app > iframe").locator("#path").waitFor();
 }
+async function crossFromForeignShell() {
+	const offset = requests.length;
+	await page.frameLocator("#app > iframe").locator("#cross").click();
+	await page
+		.frameLocator("#app > iframe")
+		.locator("#path")
+		.filter({ hasText: "accounts.example.com/login" })
+		.waitFor();
+	assert.equal(new URL(page.url()).hostname, "www-example-com.localhost");
+	assert.equal(
+		new URL(page.url()).searchParams.get("__scramjet_url"),
+		"https://accounts.example.com/login?next=%2Fhome#part"
+	);
+	const request = requests
+		.slice(offset)
+		.find((r) => r.url.startsWith("https://accounts.example.com/login"));
+	assert.ok(request);
+	assert.ok(
+		!request.headers.some(
+			([k, v]) => k.toLowerCase() === "cookie" && v.includes("strict=private")
+		)
+	);
+	assert.ok(
+		request.headers.some(
+			([k, v]) => k.toLowerCase() === "sec-fetch-site" && v === "cross-site"
+		)
+	);
+}
 try {
 	await reset();
 	await page.frameLocator("#app > iframe").locator("#cross").click();
@@ -186,6 +214,7 @@ try {
 		)
 	);
 	results.push("cross-host POST retains body and controller");
+	await crossFromForeignShell();
 	await reset();
 	await page.frameLocator("#app > iframe").locator("#nested").click();
 	await page
@@ -247,6 +276,7 @@ try {
 		"https://unrelated.test/home"
 	);
 	await context.unroute("**/__scramjet_handoff?*");
+	await crossFromForeignShell();
 	results.push("blocked handoff retains functional original controller");
 	const source = `http://unrelated-test.localhost:${port}/source`;
 	await page.goto(source);
@@ -339,6 +369,19 @@ try {
 	}
 	results.push(
 		"forged handoff metadata and empty referrer preserve cross-site cookie restrictions"
+	);
+	for (const target of [
+		"https://unrelated.test/source",
+		"http://unrelated.test/source",
+	]) {
+		const fallback = new URL(start);
+		fallback.searchParams.set("__scramjet_url", target);
+		await page.goto(fallback.href);
+		await page.frameLocator("#app > iframe").locator("#path").waitFor();
+		await crossFromForeignShell();
+	}
+	results.push(
+		"foreign explicit targets retain their controller and actual cross-site context"
 	);
 	await page.screenshot({ path: out + "/navigation.png" });
 	assert.deepEqual(errors, []);
