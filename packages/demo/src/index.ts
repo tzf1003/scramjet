@@ -12,7 +12,6 @@ import {
 	proxyUrl,
 	shellUrl,
 } from "./routing";
-import "./style.css";
 
 const app = document.getElementById("app")!;
 
@@ -49,7 +48,11 @@ async function registerWorker(): Promise<ServiceWorker> {
 async function main() {
 	const entry = new URL(location.href);
 	const base = import.meta.env.VITE_PROXY_DOMAIN || DEFAULT_PROXY_DOMAIN;
-	const target = resolveTarget(entry, base);
+	const gatewayAccess = import.meta.env.VITE_GATEWAY_ACCESS === "1";
+	const routingEntry = new URL(entry);
+	if (gatewayAccess && entry.hostname === base)
+		routingEntry.hostname = "go." + base;
+	const target = resolveTarget(routingEntry, base);
 	document.title = target.hostname;
 
 	const serviceworker = await registerWorker();
@@ -59,16 +62,36 @@ async function main() {
 	if (!["ws:", "wss:"].includes(wispUrl.protocol)) {
 		throw new Error("Wisp 地址必须使用 ws:// 或 wss://。");
 	}
+	let webrtc = defaultConfigDev.webrtc;
+	if (gatewayAccess) {
+		const configuration = await fetch("/api/config", {
+			credentials: "same-origin",
+		});
+		if (!configuration.ok) {
+			if (configuration.status === 401)
+				location.replace(
+					"/login?return=" +
+						encodeURIComponent(entry.pathname + entry.search + entry.hash)
+				);
+			throw new Error("无法获取访问配置，请稍后重试。");
+		}
+		webrtc = (await configuration.json()).webrtc;
+	}
 	const controller = new Controller({
 		serviceworker,
 		transport: new LibcurlClient({ wisp: wispUrl.href }),
-		scramjetConfig: { ...defaultConfigDev, environment: loadEnvironment() },
+		scramjetConfig: {
+			...defaultConfigDev,
+			environment: loadEnvironment(),
+			webrtc,
+		},
 	});
 	await controller.wait();
 
 	const iframe = document.createElement("iframe");
 	iframe.title = target.hostname;
-	iframe.allow = "fullscreen; autoplay; clipboard-read; clipboard-write";
+	iframe.allow =
+		"fullscreen; autoplay; clipboard-read; clipboard-write; camera; microphone; display-capture";
 	const syncAddress = (value: string) => {
 		const url = new URL(value);
 		if (!["https:", "http:"].includes(url.protocol)) return;
@@ -82,7 +105,11 @@ async function main() {
 	const frame = controller.createFrame(iframe, {
 		plugins: [
 			watcher,
-			new CatchEscapedLinksPlugin((url) => proxyUrl(url, entry, base)),
+			new CatchEscapedLinksPlugin((url) =>
+				gatewayAccess && entry.hostname === base
+					? shellUrl(url, entry, base)
+					: proxyUrl(url, entry, base)
+			),
 		],
 	});
 	watcher.tap(frame.hooks.init.post, (context) => {

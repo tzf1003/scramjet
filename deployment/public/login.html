@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>访问密钥 · Scramjet</title>
+		<link rel="stylesheet" href="/style.css" />
+		<script type="module" src="/login.js"></script>
+	</head>
+	<body class="login">
+		<form id="login">
+			<h1>Scramjet</h1>
+			<p>输入访问密钥，开始浏览网页。</p>
+			<label for="access-key">访问密钥</label>
+			<input
+				id="access-key"
+				name="accessKey"
+				type="password"
+				autocomplete="current-password"
+				autocapitalize="none"
+				spellcheck="false"
+				required
+			/>
+			<button type="submit">开始访问</button>
+			<p id="message" role="status" aria-live="polite"></p>
+		</form>
+	</body>
+</html>

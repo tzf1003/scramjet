@@ -16,7 +16,135 @@ iframe {
 	border: 0;
 }
 
-[role="status"],
+.page-loading {
+	--loading-accent: #5b6fe5;
+	--loading-track: #e7ebff;
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	color: #1f2937;
+	font-family: system-ui, sans-serif;
+}
+
+.page-loading__edge {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 33%;
+	height: 3px;
+	background: var(--loading-accent);
+	animation: loading-sweep 2.1s ease-in-out infinite;
+}
+
+.page-loading__content {
+	position: absolute;
+	top: 42%;
+	left: 50%;
+	display: grid;
+	justify-items: center;
+	width: min(84%, 360px);
+	text-align: center;
+	transform: translate(-50%, -50%);
+}
+
+.page-loading h1 {
+	margin: 0;
+	font-size: 19px;
+	font-weight: 500;
+	line-height: 1.4;
+	letter-spacing: 0.02em;
+}
+
+.page-loading p {
+	margin: 8px 0 0;
+	color: #677388;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.page-loading__track {
+	position: relative;
+	width: min(100%, 240px);
+	height: 5px;
+	margin-top: 22px;
+	overflow: hidden;
+	border-radius: 6px;
+	background: var(--loading-track);
+}
+
+.page-loading__track::after {
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 42%;
+	border-radius: inherit;
+	background: var(--loading-accent);
+	content: "";
+	animation: loading-sweep 2.2s ease-in-out infinite;
+}
+
+.page-loading__dots {
+	display: flex;
+	gap: 7px;
+	margin-top: 22px;
+}
+
+.page-loading__dots span {
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--loading-accent);
+	opacity: 0.28;
+	animation: loading-pulse 1.2s ease-in-out infinite;
+}
+
+.page-loading__dots span:nth-child(2) {
+	animation-delay: 0.14s;
+}
+
+.page-loading__dots span:nth-child(3) {
+	animation-delay: 0.28s;
+}
+
+@keyframes loading-sweep {
+	0% {
+		transform: translateX(-120%);
+	}
+	55%,
+	100% {
+		transform: translateX(305%);
+	}
+}
+
+@keyframes loading-pulse {
+	0%,
+	100% {
+		opacity: 0.2;
+		transform: translateY(0);
+	}
+	50% {
+		opacity: 0.9;
+		transform: translateY(-3px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.page-loading__edge,
+	.page-loading__track::after,
+	.page-loading__dots span {
+		animation: none;
+	}
+
+	.page-loading__edge {
+		width: 100%;
+		opacity: 0.35;
+	}
+
+	.page-loading__track::after {
+		left: 29%;
+	}
+}
+
 [role="alert"] {
 	margin: 0;
 	padding: 24px;
