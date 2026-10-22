@@ -3,7 +3,11 @@
 	<head>
 		<meta charset="UTF-8" />
 		<link rel="icon" type="image/png" href="/icon.png" />
-		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+		/>
+		<meta name="color-scheme" content="light dark" />
 		<title>网页代理</title>
 		<link rel="stylesheet" href="/src/style.css" />
 
@@ -13,15 +17,35 @@
 
 	<body>
 		<div id="app">
-			<div class="page-loading" role="status" aria-live="polite">
-				<div class="page-loading__edge" aria-hidden="true"></div>
-				<div class="page-loading__content">
-					<h1>正在准备网页</h1>
-					<p>正在加载网页内容，请稍候</p>
-					<div class="page-loading__track" aria-hidden="true"></div>
-					<div class="page-loading__dots" aria-hidden="true">
-						<span></span><span></span><span></span>
+			<div class="loader" data-state="loading">
+				<div class="loader__bar" aria-hidden="true"><span></span></div>
+				<div class="loader__body" role="status" aria-live="polite">
+					<div class="loader__mark" aria-hidden="true">
+						<svg class="loader__ring" viewBox="0 0 72 72">
+							<circle class="loader__track" cx="36" cy="36" r="33" />
+							<circle class="loader__arc" cx="36" cy="36" r="33" />
+						</svg>
+						<svg class="loader__icon loader__icon--globe" viewBox="0 0 24 24">
+							<circle cx="12" cy="12" r="9" />
+							<path
+								d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z"
+							/>
+						</svg>
+						<svg class="loader__icon loader__icon--error" viewBox="0 0 24 24">
+							<circle cx="12" cy="12" r="9" />
+							<path d="M12 7.5v5.5M12 16.5h.01" />
+						</svg>
 					</div>
+					<p class="loader__host" hidden>
+						<svg viewBox="0 0 24 24" aria-hidden="true">
+							<rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+							<path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+						</svg>
+						<span></span>
+					</p>
+					<h1 class="loader__status">正在准备网页</h1>
+					<p class="loader__hint">首次访问需要初始化，通常只需几秒</p>
+					<button class="loader__retry" type="button" hidden>重新加载</button>
 				</div>
 			</div>
 		</div>
