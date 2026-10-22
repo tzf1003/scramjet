@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+	isSafeColorSyntax,
 	isTransparent,
 	pickSurfaceColor,
 	type SurfaceSample,
@@ -86,4 +87,30 @@ test("ignores theme-color values that are not plain colors", () => {
 		),
 		"rgb(20, 20, 20)"
 	);
+});
+
+test("accepts only plain color syntax, including against CSS escapes", () => {
+	for (const ok of [
+		"#161616",
+		"#fff",
+		"red",
+		"rgb(1 2 3 / 50%)",
+		"rgba(0, 0, 0, 0.5)",
+		"hsl(10 20% 30%)",
+		"oklch(0.5 0.1 200)",
+		"color-mix(in srgb, red, blue)",
+	])
+		assert.equal(isSafeColorSyntax(ok), true, ok);
+	for (const bad of [
+		"url(https://example.test/x)",
+		"red url(https://example.test/x)",
+		"var(--x)",
+		"\\76 ar(--x, \\75 rl(https://example.test/pixel))",
+		"\\75rl(https://example.test/x)",
+		"rgb(var(--x))",
+		"rgb(1 2 3) url(x)",
+		'image-set("a" 1x)',
+		"red;background:url(x)",
+	])
+		assert.equal(isSafeColorSyntax(bad), false, bad);
 });

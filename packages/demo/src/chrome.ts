@@ -25,11 +25,22 @@ export function isTransparent(color: string): boolean {
 
 // theme-color comes from the proxied page and ends up in the shell's CSS, so
 // it must be a plain color: url() or var() would make the shell itself fetch
-// a page-chosen address, bypassing the proxy.
+// a page-chosen address, bypassing the proxy. Allow only a known shape rather
+// than deny known-bad functions, since CSS escapes (\75rl(...)) defeat a
+// denylist: no backslashes, no nested parentheses, color function names only.
+const COLOR_SYNTAX =
+	/^(?:#[0-9a-f]{3,8}|[a-z]+|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix)\([\w\s.,%/#+-]*\))$/i;
+
+export function isSafeColorSyntax(value: string): boolean {
+	return COLOR_SYNTAX.test(value.trim());
+}
+
 export function isPlainColor(value: string): boolean {
-	if (/\b(?:url|var|attr|env|image|image-set|element|paint)\(/i.test(value))
-		return false;
-	return typeof CSS !== "undefined" && CSS.supports("color", value);
+	return (
+		isSafeColorSyntax(value) &&
+		typeof CSS !== "undefined" &&
+		CSS.supports("color", value)
+	);
 }
 
 export function pickSurfaceColor(
