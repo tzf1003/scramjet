@@ -13,6 +13,7 @@ import {
 import { RawHeaders } from "@mercuryworkshop/proxy-transports";
 import { _URL, _Set } from "@/shared/snapshot";
 import { createReferrerString } from "./util";
+import { environmentAcceptLanguage } from "@/shared/environment";
 
 /**
  * Headers for security policy features that haven't been emulated yet
@@ -122,6 +123,8 @@ export function rewriteRequestHeaders(
 	parsed: ScramjetFetchParsed
 ): ScramjetHeaders {
 	const headers = request.initialHeaders.clone();
+	const language = environmentAcceptLanguage(handler.context.config.environment);
+	if (language) headers.set("Accept-Language", language);
 
 	// avoid leaking the scramjet referer
 	headers.delete("Referer");

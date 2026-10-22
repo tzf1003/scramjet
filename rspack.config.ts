@@ -261,6 +261,7 @@ export const tsloader = {
 	},
 	type: "javascript/auto",
 };
+const fontloader = { test: /\.ttf$/, type: "asset/inline" };
 //TODO: replace this
 function deepmerge<T extends any>(target: T, source: Partial<T>): T {
 	// this whole function is a hack, ignore all of the type errors
@@ -302,7 +303,7 @@ const createGenericConfig = (options: Partial<RspackOptions>) => {
 			extensions: [".ts", ".js"],
 		},
 		module: {
-			rules: [tsloader],
+			rules: [tsloader, fontloader],
 			parser: {
 				javascript: {
 					overrideStrict: "non-strict",
@@ -349,6 +350,18 @@ const createScramjetConfig = (options: ScramjetBuildConfig) => {
 		},
 		output,
 		plugins: [
+			new rspack.CopyRspackPlugin({
+				patterns: [
+					{
+						from: join(scramjetdir, "assets/fonts/LICENSE.md"),
+						to: "fonts-LICENSE.md",
+					},
+					{
+						from: join(scramjetdir, "assets/fonts/README.md"),
+						to: "fonts-README.md",
+					},
+				],
+			}),
 			// new TsCheckerRspackPlugin({
 			// 	typescript: {
 			// 		configFile: resolve(scramjetdir, "tsconfig.json"),
@@ -527,7 +540,7 @@ const typeGenConfig = defineConfig({
 		},
 	},
 	module: {
-		rules: [tsloader],
+		rules: [tsloader, fontloader],
 	},
 });
 

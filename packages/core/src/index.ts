@@ -50,6 +50,7 @@ export const defaultConfig: ScramjetConfig = {
 	},
 	siteFlags: {},
 	maskedfiles: [],
+	environment: {},
 	webrtc: {
 		...defaultWebrtcConfig,
 		iceServers: [],

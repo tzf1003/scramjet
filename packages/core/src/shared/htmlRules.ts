@@ -3,6 +3,7 @@ import { rewriteHtml, rewriteSrcset } from "@rewriters/html";
 import { rewriteUrl, unrewriteBlob, URLMeta } from "@rewriters/url";
 import { ScramjetContext } from "@/shared";
 import { _URL } from "./snapshot";
+import { rewriteFontValue } from "./fonts";
 
 export const htmlRules: {
 	[key: string]: "*" | string[] | ((...any: any[]) => string | null);
@@ -13,6 +14,14 @@ export const htmlRules: {
 		attrs?: Record<string, string | undefined>
 	) => string | null;
 }[] = [
+	{
+		fn: (value, context) =>
+			context.config.environment?.protectFonts
+				? rewriteFontValue(value)
+				: value,
+		"font-family": "*",
+		face: ["font"],
+	},
 	{
 		fn: (value, context, meta) =>
 			rewriteUrl(value, context, meta, { navigateType: "location" }),

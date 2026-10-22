@@ -1,3 +1,4 @@
+import { loadEnvironment } from "./environment";
 import LoadInterstitial from "./components/LoadInterstitial";
 import App from "./App";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
@@ -96,7 +97,7 @@ async function init() {
 		controller = new Controller({
 			serviceworker: readySw,
 			transport: getTransport(),
-			scramjetConfig: defaultConfigDev,
+			scramjetConfig: { ...defaultConfigDev, environment: loadEnvironment() },
 		});
 		await controller.wait();
 		console.log(controller);

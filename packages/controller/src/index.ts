@@ -8,6 +8,7 @@ import {
 	CookieJar,
 	defaultConfig as scramjetDefaultConfig,
 	parseWebrtcCredentialPayload,
+	normalizeEnvironment,
 	rewriteUrl,
 	ScramjetFetchHandler,
 	ScramjetHeaders,
@@ -524,6 +525,9 @@ export class Controller {
 			this.scramjetConfig,
 			init.scramjetConfig || {}
 		) as ScramjetConfig;
+		this.scramjetConfig.environment = normalizeEnvironment(
+			this.scramjetConfig.environment
+		);
 		this.prefix = this.config.prefix + this.id + "/";
 		this.serviceWorkerController = init.serviceworker;
 

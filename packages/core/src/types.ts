@@ -1,5 +1,17 @@
 import type { ScramjetWebrtcConfig } from "./shared/webrtc";
 
+/** Optional environment values exposed to proxied pages. */
+export interface ScramjetEnvironmentConfig {
+	/** IANA time zone for local Date operations and default Intl formatting. */
+	timezone?: string;
+	/** Default BCP 47 locale; also placed first in languages. */
+	locale?: string;
+	/** Ordered BCP 47 locales for navigator and Accept-Language. */
+	languages?: string[];
+	/** Best-effort local-font restrictions and bundled Twemoji 14 rendering. */
+	protectFonts?: boolean;
+}
+
 /**
  * Version information for the current Scramjet build.
  * Contains both the semantic version string and the git commit hash for build identification.
@@ -55,6 +67,8 @@ export interface ScramjetConfig {
 	 * modify it. See docs/webrtc-architecture.md.
 	 */
 	webrtc: ScramjetWebrtcConfig;
+	/** Omitted fields use the native browser environment. */
+	environment?: ScramjetEnvironmentConfig;
 }
 
 /**
