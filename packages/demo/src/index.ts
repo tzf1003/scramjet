@@ -22,7 +22,6 @@ import {
 	prepareHandoff,
 	receiveHandoff,
 } from "./handoff";
-import "./style.css";
 
 const app = document.getElementById("app")!;
 
@@ -59,10 +58,16 @@ async function registerWorker(): Promise<ServiceWorker> {
 async function main() {
 	const entry = new URL(location.href);
 	const base = import.meta.env.VITE_PROXY_DOMAIN || DEFAULT_PROXY_DOMAIN;
-	if (receiveHandoff(entry, base)) return;
-	const target = resolveTarget(entry, base);
-	const originTarget = resolveTarget(new URL(entry.origin), base);
-	const handoff = consumeHandoff(entry, base);
+	const gatewayAccess = import.meta.env.VITE_GATEWAY_ACCESS === "1";
+	const gatewayApex = gatewayAccess && entry.hostname === base;
+	if (!gatewayApex && receiveHandoff(entry, base)) return;
+	const routingEntry = new URL(entry);
+	if (gatewayApex) routingEntry.hostname = "go." + base;
+	const target = resolveTarget(routingEntry, base);
+	const originTarget = gatewayApex
+		? null
+		: resolveTarget(new URL(entry.origin), base);
+	const handoff = gatewayApex ? null : consumeHandoff(entry, base);
 	document.title = target.hostname;
 
 	const serviceworker = await registerWorker();
@@ -72,10 +77,29 @@ async function main() {
 	if (!["ws:", "wss:"].includes(wispUrl.protocol)) {
 		throw new Error("Wisp 地址必须使用 ws:// 或 wss://。");
 	}
+	let webrtc = defaultConfigDev.webrtc;
+	if (gatewayAccess) {
+		const configuration = await fetch("/api/config", {
+			credentials: "same-origin",
+		});
+		if (!configuration.ok) {
+			if (configuration.status === 401)
+				location.replace(
+					"/login?return=" +
+						encodeURIComponent(entry.pathname + entry.search + entry.hash)
+				);
+			throw new Error("无法获取访问配置，请稍后重试。");
+		}
+		webrtc = (await configuration.json()).webrtc;
+	}
 	const controller = new Controller({
 		serviceworker,
 		transport: new LibcurlClient({ wisp: wispUrl.href }),
-		scramjetConfig: { ...defaultConfigDev, environment: loadEnvironment() },
+		scramjetConfig: {
+			...defaultConfigDev,
+			environment: loadEnvironment(),
+			webrtc,
+		},
 	});
 	await controller.wait();
 	if (handoff) {
@@ -90,7 +114,8 @@ async function main() {
 
 	const iframe = document.createElement("iframe");
 	iframe.title = target.hostname;
-	iframe.allow = "fullscreen; autoplay; clipboard-read; clipboard-write";
+	iframe.allow =
+		"fullscreen; autoplay; clipboard-read; clipboard-write; camera; microphone; display-capture";
 	const syncAddress = (value: string) => {
 		const url = new URL(value);
 		if (!["https:", "http:"].includes(url.protocol)) return;
@@ -104,7 +129,9 @@ async function main() {
 	const frame = controller.createFrame(iframe, {
 		plugins: [
 			watcher,
-			new CatchEscapedLinksPlugin((url) => proxyUrl(url, entry, base)),
+			new CatchEscapedLinksPlugin((url) =>
+				gatewayApex ? shellUrl(url, entry, base) : proxyUrl(url, entry, base)
+			),
 		],
 	});
 	let currentTarget = target;
@@ -120,7 +147,7 @@ async function main() {
 			if (request.method !== "GET") return;
 			// A fallback can display another logical origin inside this proxy shell.
 			// Keep its controller: this shell cannot authenticate that document's origin.
-			if (currentTarget.origin !== originTarget.origin) return;
+			if (!originTarget || currentTarget.origin !== originTarget.origin) return;
 			const destination = proxyUrl(parsed.url, entry, base);
 			if (destination.origin === entry.origin) return;
 			handoffAbort = new AbortController();

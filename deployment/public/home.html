@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>Scramjet 网页代理</title>
+		<link rel="stylesheet" href="/style.css" />
+		<script type="module" src="/home.js"></script>
+		<script type="module" src="/access-session.js"></script>
+	</head>
+	<body class="login">
+		<form id="open">
+			<h1>Scramjet 网页代理</h1>
+			<p>输入网址开始浏览</p>
+			<label for="url">网址</label
+			><input
+				id="url"
+				name="url"
+				type="text"
+				placeholder="https://example.com"
+				autocomplete="url"
+				required
+			/><button type="submit">打开网页</button>
+			<p id="message" role="status"></p>
+			<p>
+				<a href="/source.tar.gz">项目源码</a> ·
+				<a href="/version.json">版本信息</a> ·
+				<button id="logout" type="button">退出</button>
+			</p>
+		</form>
+	</body>
+</html>

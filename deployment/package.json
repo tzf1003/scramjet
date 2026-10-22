@@ -1,0 +1,10 @@
+{
+  "name": "scramjet-deployment",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mercuryworkshop/wisp-js": "0.4.1",
+    "ipaddr.js": "2.3.0"
+  }
+}

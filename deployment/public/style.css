@@ -1,0 +1,183 @@
+:root {
+	color-scheme: light;
+	font-family:
+		system-ui,
+		-apple-system,
+		"PingFang SC",
+		sans-serif;
+	color: #1e293b;
+	background: #f1f5f9;
+}
+* {
+	box-sizing: border-box;
+}
+body {
+	margin: 0;
+}
+a {
+	color: #2563eb;
+	text-decoration: none;
+}
+button,
+input {
+	font: inherit;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	padding: 10px 13px;
+}
+button {
+	cursor: pointer;
+	background: #fff;
+	color: #334155;
+	white-space: nowrap;
+}
+button:disabled {
+	opacity: 0.55;
+	cursor: wait;
+}
+button:hover {
+	background: #eff6ff;
+}
+input:focus {
+	outline: 2px solid #93c5fd;
+}
+.browser {
+	display: flex;
+	height: 100dvh;
+	flex-direction: column;
+}
+header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 20px;
+	background: #fff;
+	border-bottom: 1px solid #e2e8f0;
+}
+.brand {
+	font-size: 22px;
+	font-weight: 700;
+}
+.badge {
+	font-size: 12px;
+	font-weight: 500;
+	padding: 5px 9px;
+	border-radius: 20px;
+	background: #dcfce7;
+	color: #166534;
+	vertical-align: middle;
+}
+.links {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+}
+#navigate {
+	display: flex;
+	gap: 8px;
+	padding: 12px 20px;
+	background: #fff;
+}
+#url {
+	flex: 1;
+	min-width: 50px;
+	background: #f8fafc;
+}
+#go,
+.login button {
+	background: #2563eb;
+	color: #fff;
+	border-color: #2563eb;
+}
+#status {
+	margin: 0;
+	padding: 5px 20px 10px;
+	font-size: 13px;
+	color: #64748b;
+	overflow-wrap: anywhere;
+}
+main {
+	flex: 1;
+	min-height: 0;
+	background: white;
+	margin: 0 20px;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	overflow: hidden;
+}
+iframe {
+	width: 100%;
+	height: 100%;
+	border: 0;
+}
+footer {
+	padding: 9px 20px;
+	font-size: 12px;
+	color: #64748b;
+}
+.login {
+	display: grid;
+	min-height: 100dvh;
+	place-items: center;
+	padding: 20px;
+}
+.login form {
+	width: min(390px, 100%);
+	background: white;
+	padding: 32px;
+	border: 1px solid #e2e8f0;
+	border-radius: 16px;
+	box-shadow: 0 12px 40px #0f172a0a;
+}
+.login h1 {
+	margin: 0 0 12px;
+}
+.login p {
+	color: #64748b;
+}
+.login label {
+	display: block;
+	margin-top: 24px;
+	font-size: 14px;
+}
+.login input,
+.login button {
+	width: 100%;
+	margin-top: 10px;
+}
+.login #message {
+	min-height: 24px;
+	font-size: 14px;
+}
+@media (max-width: 600px) {
+	header {
+		padding: 10px 12px;
+	}
+	.brand {
+		font-size: 19px;
+	}
+	.badge {
+		display: none;
+	}
+	#navigate {
+		gap: 5px;
+		padding: 10px;
+	}
+	#navigate button {
+		padding: 9px;
+	}
+	#status {
+		padding-left: 12px;
+	}
+	main {
+		margin: 0 8px;
+	}
+	footer {
+		padding: 8px 12px;
+		font-size: 11px;
+	}
+	.links {
+		gap: 10px;
+	}
+}
