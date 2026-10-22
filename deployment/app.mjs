@@ -42,7 +42,7 @@ const access = createAccessControl(
 		env.ACCESS_KEY_FILE || "/run/secrets/admin-password",
 		"utf8"
 	).trim(),
-	{ domain: accessScope === "domain" ? proxyDomain : undefined }
+	{ domain: proxyDomain, shared: accessScope === "domain" }
 );
 function requestOrigin(req) {
 	try {
@@ -174,7 +174,11 @@ const server = http.createServer(async (req, res) => {
 			if (req.headers.origin !== origin)
 				return json(res, 403, { error: "origin denied" });
 			res.setHeader("set-cookie", access.clearCookies());
-			res.setHeader("clear-site-data", '"cache", "cookies", "storage"');
+			// "cookies" would also drop the shared logout marker set above.
+			res.setHeader(
+				"clear-site-data",
+				access.shared ? '"cache", "storage"' : '"cache", "cookies", "storage"'
+			);
 			return json(res, 200, { ok: true });
 		}
 		if (!access.authenticated(req)) {

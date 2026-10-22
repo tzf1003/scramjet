@@ -2,15 +2,20 @@ import crypto from "node:crypto";
 
 export const ACCESS_COOKIE = "__Secure-scramjet-access-key";
 export const HOST_ACCESS_COOKIE = "__Host-scramjet-access-key";
+export const LOGOUT_COOKIE = "__Secure-scramjet-logged-out";
 export const LEGACY_COOKIE = "__Host-scramjet-turn-session";
 export const COOKIE_MAX_AGE = 400 * 24 * 60 * 60;
 
 /**
- * With `domain`, one cookie covers that domain and every subdomain, so a key
- * entered on any mapped host authenticates all of them. Without it the cookie
- * stays host-only.
+ * `domain` is the proxy domain. Shared mode (the default when it is set) issues
+ * one cookie covering that domain and every subdomain, so a key entered on any
+ * mapped host authenticates all of them; `shared: false` keeps host-only
+ * cookies and expires any domain cookie left by a shared deployment.
  */
-export function createAccessControl(accessKey, { domain } = {}) {
+export function createAccessControl(
+	accessKey,
+	{ domain, shared = Boolean(domain) } = {}
+) {
 	if (
 		typeof accessKey !== "string" ||
 		accessKey.length < 8 ||
@@ -29,9 +34,9 @@ export function createAccessControl(accessKey, { domain } = {}) {
 			)
 		);
 	}
-	const name = domain ? ACCESS_COOKIE : HOST_ACCESS_COOKIE;
+	const name = shared ? ACCESS_COOKIE : HOST_ACCESS_COOKIE;
 	// Host-only cookies issued before shared access stay valid until renewed.
-	const accepted = domain ? [ACCESS_COOKIE, HOST_ACCESS_COOKIE] : [name];
+	const accepted = shared ? [ACCESS_COOKIE, HOST_ACCESS_COOKIE] : [name];
 	function authenticated(req) {
 		const parts = (req.headers.cookie || "").split(";").map((p) => p.trim());
 		return accepted.some((cookieName) => {
@@ -48,21 +53,35 @@ export function createAccessControl(accessKey, { domain } = {}) {
 	}
 	const attributes = "; Path=/; Secure; HttpOnly; SameSite=Strict";
 	const scope = domain ? `; Domain=${domain}` : "";
+	const expire = (cookieName, extra = attributes) =>
+		`${cookieName}=${extra}; Max-Age=0`;
+	// Readable by scripts and free of secrets: tells every origin not to
+	// restore a saved key after an explicit logout.
+	const markerAttributes = `; Path=/; Secure; SameSite=Strict${scope}`;
 	/** Set-Cookie values issued on login and renewal. */
 	function cookie() {
-		const value = `${name}=${encodeURIComponent(accessKey)}${attributes}${scope}; Max-Age=${COOKIE_MAX_AGE}`;
-		// Drop the old host-only cookie so it cannot shadow the shared one.
+		const value = `${name}=${encodeURIComponent(accessKey)}${attributes}${shared ? scope : ""}; Max-Age=${COOKIE_MAX_AGE}`;
+		if (shared)
+			// Drop the old host-only cookie so it cannot shadow the shared one.
+			return [
+				value,
+				expire(HOST_ACCESS_COOKIE),
+				expire(LOGOUT_COOKIE, markerAttributes),
+			];
 		return domain
-			? [value, `${HOST_ACCESS_COOKIE}=${attributes}; Max-Age=0`]
+			? [value, expire(ACCESS_COOKIE, attributes + scope)]
 			: [value];
 	}
 	function clearCookies() {
-		const cleared = [HOST_ACCESS_COOKIE, LEGACY_COOKIE].map(
-			(cookieName) => `${cookieName}=${attributes}; Max-Age=0`
+		const cleared = [HOST_ACCESS_COOKIE, LEGACY_COOKIE].map((cookieName) =>
+			expire(cookieName)
 		);
-		if (domain)
-			cleared.unshift(`${ACCESS_COOKIE}=${attributes}${scope}; Max-Age=0`);
+		if (domain) cleared.unshift(expire(ACCESS_COOKIE, attributes + scope));
+		if (shared)
+			cleared.push(
+				`${LOGOUT_COOKIE}=1${markerAttributes}; Max-Age=${COOKIE_MAX_AGE}`
+			);
 		return cleared;
 	}
-	return { valid, authenticated, cookie, clearCookies };
+	return { valid, authenticated, cookie, clearCookies, shared };
 }

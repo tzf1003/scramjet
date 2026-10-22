@@ -13,6 +13,7 @@ import {
 	createAccessControl,
 	ACCESS_COOKIE,
 	HOST_ACCESS_COOKIE,
+	LOGOUT_COOKIE,
 	COOKIE_MAX_AGE,
 } from "../../deployment/access-key.mjs";
 import {
@@ -91,11 +92,32 @@ test("a fixed key authenticates after the previous session expiry and rejects ma
 
 test("a domain-scoped cookie is shared across subdomains and still honours host-only cookies", () => {
 	const access = createAccessControl(key, { domain: "proxy.test" });
-	const [shared, legacy] = access.cookie();
+	const [shared, legacy, marker] = access.cookie();
 	assert.match(shared, new RegExp(`^${ACCESS_COOKIE}=`));
 	assert.match(shared, /; Domain=proxy\.test; /);
 	assert.match(shared, /Secure; HttpOnly; SameSite=Strict/);
 	assert.match(legacy, new RegExp(`^${HOST_ACCESS_COOKIE}=.*Max-Age=0`));
+	assert.match(marker, new RegExp(`^${LOGOUT_COOKIE}=; .*Max-Age=0`));
+	const cleared = access.clearCookies();
+	assert.ok(
+		cleared.some((value) =>
+			new RegExp(`^${LOGOUT_COOKIE}=1; .*Domain=proxy\\.test`).test(value)
+		)
+	);
+	// Host scope drops the domain cookie left by a shared deployment.
+	const hostOnly = createAccessControl(key, {
+		domain: "proxy.test",
+		shared: false,
+	});
+	assert.ok(
+		hostOnly
+			.cookie()
+			.some((value) => /^__Secure-.*Domain=proxy\.test.*Max-Age=0/.test(value))
+	);
+	assert.equal(
+		hostOnly.authenticated({ headers: { cookie: shared.split(";")[0] } }),
+		false
+	);
 	assert.equal(
 		access.authenticated({ headers: { cookie: shared.split(";")[0] } }),
 		true
@@ -146,6 +168,20 @@ test("fresh frontend instances restore a saved key and discard it only after an 
 	await assert.rejects(createKeyClient({ storage, request }).restore());
 	assert.equal(storage.getItem(STORAGE_KEY), undefined);
 	assert.equal(await createKeyClient({ storage, request }).restore(), false);
+});
+
+test("a logout marker from another origin stops silent key restoration", async () => {
+	const storage = memoryStorage();
+	storage.setItem(STORAGE_KEY, key);
+	let called = false;
+	const request = async () => {
+		called = true;
+		return { ok: true, json: async () => ({ ok: true }) };
+	};
+	const client = createKeyClient({ storage, request, loggedOut: () => true });
+	assert.equal(await client.restore(), false);
+	assert.equal(called, false);
+	assert.equal(storage.getItem(STORAGE_KEY), undefined);
 });
 
 test("storage restrictions retain cookie-based access and return URLs stay on the same origin", async () => {
@@ -474,9 +510,15 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 	});
 	assert.equal(logout.status, 200);
 	assert.ok(
-		logout.headers.getSetCookie().every((value) => value.includes("Max-Age=0"))
+		logout.headers
+			.getSetCookie()
+			.every(
+				(value) =>
+					value.includes("Max-Age=0") || value.startsWith(LOGOUT_COOKIE + "=1")
+			)
 	);
 	assert.match(logout.headers.get("clear-site-data"), /storage/);
+	assert.doesNotMatch(logout.headers.get("clear-site-data"), /cookies/);
 	assert.equal((await call("/api/session")).status, 401);
 	const storage = memoryStorage();
 	storage.setItem(STORAGE_KEY, key);

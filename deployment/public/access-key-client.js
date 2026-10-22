@@ -1,6 +1,10 @@
 export const STORAGE_KEY = "scramjet-access-key";
 
-export function createKeyClient({ storage, request = fetch }) {
+export function createKeyClient({
+	storage,
+	request = fetch,
+	loggedOut = () => false,
+}) {
 	function load() {
 		try {
 			return storage.getItem(STORAGE_KEY) || "";
@@ -40,6 +44,11 @@ export function createKeyClient({ storage, request = fetch }) {
 	async function restore() {
 		const accessKey = load();
 		if (!accessKey) return false;
+		// Another origin signed out: do not silently sign back in with a stale key.
+		if (loggedOut()) {
+			forget();
+			return false;
+		}
 		await authorize(accessKey);
 		return true;
 	}
@@ -53,7 +62,13 @@ export function browserKeyClient() {
 	} catch {
 		storage = null;
 	}
-	return createKeyClient({ storage });
+	return createKeyClient({
+		storage,
+		loggedOut: () =>
+			document.cookie
+				.split(";")
+				.some((part) => part.trim().startsWith("__Secure-scramjet-logged-out=")),
+	});
 }
 
 export function returnTarget(search, origin) {
