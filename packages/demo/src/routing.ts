@@ -1,11 +1,16 @@
-export const DEFAULT_PROXY_DOMAIN = "derp.xs2api.com";
+export const DEFAULT_PROXY_DOMAIN = "xs2api.com";
+export const DEFAULT_GATEWAY_HOST = "my.xs2api.com";
 export const TARGET_QUERY = "__scramjet_url";
 export const HANDOFF_PATH = "/__scramjet_handoff";
 export const PROXY_RESOURCE_PATH =
 	/^(?:\/(?:scramjet|controller|src|assets|node_modules|@vite|@id|@fs|wisp)(?:\/|$)|\/(?:sw\.js|icon\.png|__scramjet_handoff)$)/;
 
 export function normalizeProxyDomain(value: string): string {
-	const domain = value.trim().toLowerCase().replace(/\.$/, "");
+	const domain = value
+		.trim()
+		.toLowerCase()
+		.replace(/^\*\./, "")
+		.replace(/\.$/, "");
 	if (
 		!domain ||
 		domain.length > 253 ||
@@ -16,6 +21,17 @@ export function normalizeProxyDomain(value: string): string {
 		throw new TypeError("Proxy domain must be a hostname.");
 	}
 	return domain;
+}
+
+export function isGatewayEntry(
+	entry: URL,
+	base: string,
+	gatewayHost: string
+): boolean {
+	return [
+		normalizeProxyDomain(base),
+		normalizeProxyDomain(gatewayHost),
+	].includes(entry.hostname);
 }
 
 function httpTarget(value: string): URL {

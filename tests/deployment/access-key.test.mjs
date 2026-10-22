@@ -151,13 +151,16 @@ test("storage restrictions retain cookie-based access and return URLs stay on th
 test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and clears access on logout", async (t) => {
 	const directory = await mkdtemp(path.join(os.tmpdir(), "scramjet-access-"));
 	await writeFile(path.join(directory, "key"), key, { mode: 0o600 });
+	await writeFile(path.join(directory, "home.html"), "gateway home");
+	await writeFile(path.join(directory, "index.html"), "target shell");
 	const child = spawn(process.execPath, ["deployment/app.mjs"], {
 		cwd: new URL("../..", import.meta.url),
 		env: {
 			...process.env,
 			PORT: "0",
 			LISTEN_HOST: "127.0.0.1",
-			PROXY_DOMAIN: "proxy.test",
+			PROXY_DOMAIN: "*.proxy.test",
+			GATEWAY_HOST: "my.proxy.test",
 			ACCESS_KEY_FILE: path.join(directory, "key"),
 			PUBLIC_ROOT: directory,
 			CREDENTIAL_SESSION_SECRET: crypto.randomBytes(32).toString("hex"),
@@ -258,6 +261,77 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		(await call("/api/config", { headers: { cookie } })).status,
 		200
 	);
+	for (const host of ["proxy.test", "my.proxy.test"])
+		assert.equal(
+			await (await call("/", { headers: { cookie, host } })).text(),
+			"gateway home"
+		);
+	for (const host of [
+		"example-com.proxy.test",
+		"accounts-example-com-9443.proxy.test",
+	]) {
+		assert.equal(
+			(await call("/api/session", { headers: { host } })).status,
+			401
+		);
+		const authenticated = await call("/api/login", {
+			method: "POST",
+			headers: {
+				host,
+				origin: `https://${host}`,
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({ accessKey: key }),
+		});
+		assert.equal(authenticated.status, 200);
+		assert.ok(
+			authenticated.headers
+				.getSetCookie()
+				.every((value) => !value.includes("Domain="))
+		);
+		assert.equal(
+			await (await call("/path?q=1", { headers: { cookie, host } })).text(),
+			"target shell"
+		);
+		assert.equal(
+			(
+				await call("/turn-credentials", {
+					headers: { cookie, host, origin: "https://my.proxy.test" },
+				})
+			).status,
+			403
+		);
+		assert.equal(
+			(
+				await call("/api/login", {
+					method: "POST",
+					headers: { host, origin: "https://my.proxy.test" },
+					body: JSON.stringify({ accessKey: key }),
+				})
+			).status,
+			403
+		);
+	}
+	assert.equal(
+		await (
+			await call("/?__scramjet_url=https%3A%2F%2Fexample.com%2F", {
+				headers: { cookie, host: "my.proxy.test" },
+			})
+		).text(),
+		"target shell"
+	);
+	for (const host of [
+		"xs2api.com",
+		"proxy.test.evil.test",
+		"evilproxy.test",
+		"user@proxy.test",
+		"proxy.test/path",
+		"proxy.test:8443",
+	])
+		assert.equal(
+			(await call("/api/session", { headers: { cookie, host } })).status,
+			421
+		);
 	const turn = await call("/turn-credentials", {
 		headers: { cookie, origin: "https://proxy.test" },
 	});
@@ -285,7 +359,8 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		token,
 		origin = "https://proxy.test",
 		forwarded = "",
-		hold = false
+		hold = false,
+		host = "proxy.test"
 	) {
 		const socket = net.connect(port, "127.0.0.1");
 		let response = "";
@@ -307,12 +382,32 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 			});
 		});
 		socket.write(
-			`GET /wisp/ HTTP/1.1\r\nHost: proxy.test\r\nOrigin: ${origin}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${crypto.randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\nCookie: ${token}\r\nX-Real-IP: ${forwarded}\r\n\r\n`
+			`GET /wisp/ HTTP/1.1\r\nHost: ${host}\r\nOrigin: ${origin}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${crypto.randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\nCookie: ${token}\r\nX-Real-IP: ${forwarded}\r\n\r\n`
 		);
 		return result;
 	}
 	assert.match(await upgrade(""), /401/);
 	assert.match(await upgrade(cookie, "https://evil.test"), /401/);
+	assert.match(
+		await upgrade(
+			cookie,
+			"https://my.proxy.test",
+			"",
+			false,
+			"example-com.proxy.test"
+		),
+		/401/
+	);
+	assert.match(
+		await upgrade(
+			cookie,
+			"https://example-com.proxy.test",
+			"",
+			false,
+			"example-com.proxy.test"
+		),
+		/101/
+	);
 	for (let index = 0; index < 13; index++)
 		assert.match(
 			await upgrade(
