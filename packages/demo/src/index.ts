@@ -25,7 +25,7 @@ import {
 	prepareHandoff,
 	receiveHandoff,
 } from "./handoff";
-import { syncShellSurface } from "./chrome";
+import { isBlankDocument, syncShellSurface } from "./chrome";
 import { failLoading, finishLoading, setStage, showHost } from "./loading";
 
 const app = document.getElementById("app")!;
@@ -230,10 +230,13 @@ async function main() {
 		);
 	});
 	iframe.addEventListener("load", () => {
-		// Inserting the iframe fires a load for its initial about:blank.
-		if (iframe.getAttribute("src")) finishLoading();
 		try {
-			document.title = iframe.contentDocument?.title || target.hostname;
+			const doc = iframe.contentDocument;
+			// Inserting the iframe fires a load for its initial about:blank, even
+			// when src is already set, so check the document that actually loaded.
+			if (!doc || isBlankDocument(doc)) return;
+			finishLoading();
+			document.title = doc.title || target.hostname;
 		} catch {
 			// A document can be temporarily inaccessible while it navigates.
 		}

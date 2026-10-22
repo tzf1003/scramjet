@@ -8,6 +8,11 @@ export type SurfaceSample = {
 	rootBackground: string;
 };
 
+// An iframe's initial about:blank document is not the proxied page.
+export function isBlankDocument(doc: Document): boolean {
+	return doc.URL === "about:blank";
+}
+
 export function isTransparent(color: string): boolean {
 	const value = color.trim().toLowerCase();
 	if (!value || value === "transparent") return true;
@@ -82,7 +87,7 @@ export function syncShellSurface(iframe: HTMLIFrameElement) {
 		} catch {
 			// A document can be temporarily inaccessible while it navigates.
 		}
-		if (!doc?.documentElement) return;
+		if (!doc?.documentElement || isBlankDocument(doc)) return;
 		if (
 			!observed ||
 			observed[0] !== doc ||
