@@ -1,6 +1,6 @@
 import {
 	parse,
-	generate,
+	generate as generateNative,
 	walk,
 	lexer,
 	ident,
@@ -11,6 +11,24 @@ import { JSON_stringify } from "./snapshot";
 
 export const emojiFamily = "Scramjet Twemoji 14";
 export const missingFamily = "Scramjet Unavailable Font";
+
+/** Keep decoded CSS strings/URLs safe when embedded in an HTML style element. */
+function generate(node: CssNode): string {
+	return generateNative(node, {
+		decorator(handlers) {
+			const emit = handlers.node;
+			handlers.node = function (node) {
+				if (node.type === "String" || node.type === "Url")
+					node = {
+						type: "Raw",
+						value: generateNative(node).replace(/</g, "\\3c "),
+					};
+				emit.call(this, node);
+			};
+			return handlers;
+		},
+	});
+}
 
 /** Includes localized, PostScript and common vendor aliases. */
 export function isRestrictedFont(name: string): boolean {
