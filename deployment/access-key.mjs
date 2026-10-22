@@ -92,5 +92,15 @@ export function createAccessControl(
 			);
 		return cleared;
 	}
-	return { valid, authenticated, cookie, clearCookies, shared };
+	function cacheEpochCookie() {
+		return `__Secure-scramjet-cache-epoch=${crypto.randomUUID()}; Path=/; Secure; SameSite=Strict${shared ? scope : ""}; Max-Age=${COOKIE_MAX_AGE}`;
+	}
+	return {
+		valid,
+		authenticated,
+		cookie,
+		clearCookies,
+		shared,
+		cacheEpochCookie,
+	};
 }

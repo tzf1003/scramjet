@@ -11,6 +11,7 @@ async function keepAccess() {
 			cache: "no-store",
 		});
 		if (response.status === 401) {
+			document.dispatchEvent(new Event("scramjet-cache-revoke"));
 			if (await client.restore()) location.reload();
 			else
 				location.replace(

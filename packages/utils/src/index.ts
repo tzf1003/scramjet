@@ -24,3 +24,11 @@ export {
 } from "./link-handler-plugin";
 
 assertDependencyVersions();
+
+export {
+	ResourceCache,
+	gatewayCacheScope,
+	CACHE_DATABASE,
+	type ResourceCacheOptions,
+	type CacheStats,
+} from "./http-cache-storage";

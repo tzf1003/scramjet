@@ -26,6 +26,7 @@ document.querySelector("#logout").addEventListener("click", async () => {
 		});
 		if (!response.ok) throw new Error("退出失败，请重试");
 		browserKeyClient().forget();
+		document.dispatchEvent(new Event("scramjet-cache-revoke"));
 		location.replace("/login");
 	} catch (error) {
 		message.textContent = error.message;

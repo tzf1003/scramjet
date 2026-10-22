@@ -99,7 +99,7 @@ with tarfile.open(fileobj=io.BytesIO(source)) as base, tarfile.open(release / 'p
     for info in base:
         tar.addfile(info, base.extractfile(info) if info.isfile() else None)
     # The final entries contain the exact source used by this local release.
-    paths = ['deployment', 'packages/demo/src', 'packages/demo/index.html', 'packages/demo/.env.example', 'tests/deployment']
+    paths = ['deployment', 'packages/demo/src', 'packages/demo/index.html', 'packages/demo/.env.example', 'tests/deployment', 'tests/cache', 'packages/utils/src', 'packages/demo/vite.config.ts', 'patches', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']
     for item in paths:
         p = repo / item
         for file in ([p] if p.is_file() else sorted(p.rglob('*'))):

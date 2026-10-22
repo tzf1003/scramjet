@@ -548,9 +548,29 @@ jobs:
           name: navigation-browser
           path: ${{ runner.temp }}/scramjet-navigation-browser
 
+      - name: Install cache test browsers
+        run: pnpm --dir packages/runway exec playwright install --with-deps chromium firefox webkit
+
+      - name: Test browser resource cache
+        run: node tests/cache/storage.browser.mjs && node tests/cache/proxy.browser.mjs
+        env:
+          SCRAMJET_CACHE_OUTPUT: ${{ runner.temp }}/scramjet-cache-browser
+
       - name: Build Frontend
         run: pnpm build
         working-directory: packages/demo
+
+      - name: Test portal navigation
+        run: node tests/cache/portal.browser.mjs
+        env:
+          SCRAMJET_CACHE_OUTPUT: ${{ runner.temp }}/scramjet-cache-browser
+
+      - name: Upload cache test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-browser
+          path: ${{ runner.temp }}/scramjet-cache-browser
 
       - name: Upload Artifact (frontend)
         uses: actions/upload-artifact@v4

@@ -28,6 +28,88 @@ TURN credentials retain their short lifetime and automatic refresh. After
 access-key validation the gateway supplies a short-lived internal credential
 session to the existing issuer. The access key is not returned by its APIs.
 
+## HTTP caching
+
+The gateway caches file responses according to their resolved file, so a target
+URL ending in `.js` still receives an uncached HTML shell.
+
+| Resource | Cache policy |
+| --- | --- |
+| `/login.js`, `/access-key-client.js`, `/access-session.js`, `/style.css` | Public, 5 minutes, then revalidate |
+| Content-hashed JS/CSS/images/fonts in `/assets/` | Private browser cache, 1 year, immutable |
+| Other JS/CSS/WASM/images/fonts in `/scramjet/`, `/controller/`, `/assets/`, plus `/home.js` and `/icon.png` | Private browser cache, revalidate with ETag on each use |
+| HTML shells, `/login`, `/sw.js`, APIs, TURN credentials, version/source downloads and errors | `no-store` |
+
+Cacheable file responses omit `Set-Cookie`. Authenticated HTML and API requests
+continue renewing access cookies. Private file requests validate access before
+processing conditional headers and vary on `Cookie`; an unchanged file returns
+304, while a new release or changed file invalidates its ETag. GET and HEAD use
+the same headers, and HEAD sends no file body.
+
+For Cloudflare, enable Smart Tiered Cache and create an eligible-for-cache rule
+with this expression (substitute the deployed proxy domain when needed):
+
+```text
+(http.host eq "xs2api.com" or ends_with(http.host, ".xs2api.com")) and http.request.method in {"GET" "HEAD"} and http.request.uri.path in {"/login.js" "/access-key-client.js" "/access-session.js" "/style.css"}
+```
+
+Use origin cache-control headers for Edge TTL, bypassing cache when they are
+absent, and respect origin TTL for Browser TTL. Keep the standard cache level
+and query-string cache keys. Protected resources require `private`/`no-store`
+to remain effective at the edge; overriding those directives would bypass
+gateway access checks. Wisp carries proxied target traffic over WebSocket,
+which Cloudflare's ordinary HTTP cache does not accelerate. This policy improves
+gateway loading and repeat visits; target-site transfer time also depends on
+the origin server's network path.
+
+## Browser resource cache
+
+The internal resource cache is enabled by default. `HttpCachePlugin` uses the
+request and `preresponse` hooks to retain original upstream bytes before
+Scramjet rewrites them. IndexedDB database `__scramjet_http_cache_v3` commits
+each `ArrayBuffer`, its metadata, generation epoch and eviction changes
+atomically. Cached bytes pass through rewriting again on every use.
+
+Eligible resources are GET responses for JavaScript, CSS, images, fonts and
+WASM; a fresh GET entry can also satisfy HEAD. SHA-256 keys partition the full
+target URL, including its query string, by logical top-level origin, effective
+outgoing Cookie and credential mode. `Vary` variants hash the effective
+outgoing header values. Requests with Authorization or Range, documents/HTML,
+JSON/API responses, media, streams, non-200 responses, `no-store`, `Vary: *`
+and responses setting cookies bypass storage.
+
+This is a private browser cache: freshness follows `max-age`, `Expires`,
+`Date` and `Age`; `s-maxage` does not supply its lifetime. `no-cache` requires
+validation, and `immutable` entries still expire normally. ETag or
+Last-Modified validators permit conditional requests; a 304 merges current
+headers with the original cached body before rewriting. The normal cookie
+pipeline processes each original network `Set-Cookie` once, including on 304.
+
+Each browser origin has a 100 MiB budget, 2,000-entry limit, 8 MiB resource
+limit and at most four concurrent writes. Available storage quota can reduce
+the budget. Eviction removes stale entries first, then least recently used
+entries. Storage denial, quota exhaustion or other storage failures leave
+normal network loading available.
+
+Caching runs automatically for eligible resources. Entries are local to each
+browser origin, so the portal and mapped subdomains have separate storage.
+Aggregate diagnostic counters are available as `window.scramjetCacheStats`
+on proxy pages; diagnostics do not log target URLs or cookies.
+
+Login and logout rotate the shared, Secure, nonsecret
+`__Secure-scramjet-cache-epoch` cookie. Another subdomain lazily deletes its
+old cache on its next use. Open proxy pages also check every five seconds and
+on focus/visibility changes. Every read and write checks its generation;
+clearing rotates the local epoch so pending writes cannot repopulate it.
+The logout marker resolves the active cache scope to `null` until login.
+Cleanup covers the plugin's IndexedDB namespace and legacy CacheStorage
+`scramjet-http-cache-v2`, preserving target-owned caches.
+
+Repeat visits benefit after eligible resources populate the cache. HTML/API
+requests and uncached resources still incur their upstream transfer and Wisp
+round-trip time. Actual speedup depends on resource eligibility and cache
+warmth; measure representative loads for the deployment.
+
 ## Runtime
 
 - `ACCESS_KEY_FILE`: mounted key file, 8–512 characters. Existing deployments
@@ -81,6 +163,8 @@ package's lockfile supplies its two runtime dependencies.
 ```sh
 rtk npm ci --prefix deployment --ignore-scripts
 rtk node --test tests/deployment/access-key.test.mjs
+rtk node tests/cache/storage.browser.mjs
+rtk node tests/cache/proxy.browser.mjs
 rtk env VITE_GATEWAY_ACCESS=1 VITE_PROXY_DOMAIN=xs2api.com VITE_GATEWAY_HOST=my.xs2api.com pnpm --dir packages/demo build
 rtk python3 deployment/package-release.py --base /path/to/previous/release --frontend /path/to/frontend/dist --output /path/to/new/output --release-id wildcard-release --proxy-domain xs2api.com --gateway-host my.xs2api.com
 ```
@@ -88,3 +172,20 @@ rtk python3 deployment/package-release.py --base /path/to/previous/release --fro
 The packager retains the previous gateway/TURN configuration, writes a release
 manifest and includes the exact application sources in `public/source.tar.gz`.
 Runtime secrets remain in the server's mounted secret directory.
+
+The storage suite exercises Chromium, Firefox and WebKit. The proxy suite
+uses a local target, Wisp server and the real libcurl transport in Chromium;
+it checks automatic warm-cache requests, revalidation and cached-script imports. Reuse the
+installed Playwright browsers and repository dependencies. Set
+`SCRAMJET_CACHE_OUTPUT=/path/to/project/cache-test-output` to place test
+evidence and Vite caches on the mounted external drive; the default is
+`/tmp/scramjet-cache-tests`. Set `PLAYWRIGHT_BROWSERS_PATH` when reusing a
+browser installation outside Playwright's default location.
+
+Production rollout requires building the frontend, packaging the release and
+deploying it, followed by validation against that deployed release. The
+resource-cache implementation has not been deployed to production.
+
+The libcurl transport patch in `patches/` adds HTTP 304 to its bodyless
+response statuses. Keep this patch applied through the frozen pnpm lockfile
+so validator responses reach the cache plugin successfully. Run `rtk node tests/cache/portal.browser.mjs` to verify portal navigation.
