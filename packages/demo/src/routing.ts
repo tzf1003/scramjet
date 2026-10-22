@@ -1,7 +1,8 @@
 export const DEFAULT_PROXY_DOMAIN = "derp.xs2api.com";
 export const TARGET_QUERY = "__scramjet_url";
+export const HANDOFF_PATH = "/__scramjet_handoff";
 export const PROXY_RESOURCE_PATH =
-	/^(?:\/(?:scramjet|controller|src|assets|node_modules|@vite|@id|@fs|wisp)(?:\/|$)|\/(?:sw\.js|icon\.png)$)/;
+	/^(?:\/(?:scramjet|controller|src|assets|node_modules|@vite|@id|@fs|wisp)(?:\/|$)|\/(?:sw\.js|icon\.png|__scramjet_handoff)$)/;
 
 export function normalizeProxyDomain(value: string): string {
 	const domain = value.trim().toLowerCase().replace(/\.$/, "");
@@ -36,7 +37,9 @@ function flattenHostname(hostname: string): string {
 
 function expandHostname(label: string): string {
 	if (label.includes(".") || label.length > 63) {
-		throw new TypeError("Use one flattened target label under the proxy domain.");
+		throw new TypeError(
+			"Use one flattened target label under the proxy domain."
+		);
 	}
 	const hostname = normalizeProxyDomain(
 		label.replace(/--|-/g, (separator) => (separator === "--" ? "-" : "."))
@@ -47,6 +50,41 @@ function expandHostname(label: string): string {
 	return hostname;
 }
 
+function targetLabel(target: URL): string {
+	// Numeric labels are reserved for port suffixes; IP literals use explicit URLs.
+	if (/^[\d.]+$/.test(target.hostname) || target.hostname.includes(":"))
+		return "";
+	return (
+		flattenHostname(target.hostname) + (target.port ? `-${target.port}` : "")
+	);
+}
+
+function expandTarget(label: string): URL {
+	if (label.length > 63 || label.includes(".")) {
+		throw new TypeError(
+			"Use one flattened target label under the proxy domain."
+		);
+	}
+	const match = /^(.*[^-])-([0-9]+)$/.exec(label);
+	const host = expandHostname(match ? match[1] : label);
+	const target = new URL(`https://${host}`);
+	if (match) {
+		const port = Number(match[2]);
+		if (port < 1 || port > 65535 || String(port) !== match[2]) {
+			throw new TypeError("Target port must be between 1 and 65535.");
+		}
+		target.port = match[2];
+	}
+	// Reject ambiguous numeric hosts and browser hostname canonicalizations.
+	if (
+		targetLabel(target) !== label &&
+		!(match?.[2] === "443" && targetLabel(target) === match[1])
+	) {
+		throw new TypeError("Invalid flattened target hostname or port.");
+	}
+	return target;
+}
+
 /** Resolve a public entry URL while preserving the target's path, query and hash. */
 export function resolveTarget(entry: URL, proxyDomain: string): URL {
 	const base = normalizeProxyDomain(proxyDomain);
@@ -55,11 +93,10 @@ export function resolveTarget(entry: URL, proxyDomain: string): URL {
 	if (!hostname.endsWith(suffix)) {
 		throw new TypeError(`Open a target hostname under .${base}.`);
 	}
-	const targetHost = expandHostname(hostname.slice(0, -suffix.length));
+	const target = expandTarget(hostname.slice(0, -suffix.length));
 	const explicitTarget = entry.searchParams.get(TARGET_QUERY);
 	if (explicitTarget !== null) return httpTarget(explicitTarget);
 
-	const target = new URL(`https://${targetHost}`);
 	// Assign separately: a path beginning with // must remain a path.
 	target.pathname = entry.pathname;
 	target.search = entry.search;
@@ -67,29 +104,28 @@ export function resolveTarget(entry: URL, proxyDomain: string): URL {
 	return target;
 }
 
-/** New tabs use a wildcard hostname; HTTP and custom ports use an explicit target. */
+/** HTTPS hosts and ports use a wildcard label; special URLs use an explicit target. */
 export function proxyUrl(target: URL, entry: URL, proxyDomain: string): URL {
 	httpTarget(target.href);
 	const base = normalizeProxyDomain(proxyDomain);
 	const result = new URL(entry.origin);
-	let targetLabel = "";
+	let label = "";
 	try {
-		targetLabel = flattenHostname(target.hostname);
+		label = targetLabel(target);
 	} catch {
 		// URL hosts outside DNS label syntax use the explicit target parameter.
 	}
 	if (
 		target.protocol === "https:" &&
-		!target.port &&
-		targetLabel.length > 0 &&
-		targetLabel.length <= 63 &&
+		label.length > 0 &&
+		label.length <= 63 &&
 		// Browsers interpret this prefix as Punycode rather than an encoded label.
-		!targetLabel.startsWith("xn--") &&
+		!label.startsWith("xn--") &&
 		!PROXY_RESOURCE_PATH.test(target.pathname) &&
 		!target.searchParams.has(TARGET_QUERY) &&
-		`${targetLabel}.${base}`.length <= 253
+		`${label}.${base}`.length <= 253
 	) {
-		result.hostname = `${targetLabel}.${base}`;
+		result.hostname = `${label}.${base}`;
 		result.pathname = target.pathname;
 		result.search = target.search;
 		result.hash = target.hash;

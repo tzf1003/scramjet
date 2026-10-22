@@ -71,6 +71,12 @@ hyphens: `my-site.com` uses `my--site-com.derp.xs2api.com`. Each entry occupies
 one subdomain label, covered by `*.derp.xs2api.com`. Generated links use the
 explicit target parameter when the encoded label exceeds 63 characters or
 starts with the browser-reserved `xn--` prefix.
+HTTPS target ports append a numeric suffix: `example.com:9443` uses
+`example-com-9443.derp.xs2api.com:8443` when the proxy port is 8443. Ordinary
+cross-host GET navigation switches to the corresponding proxy hostname, handing
+off cookies shared by the source and destination domain scopes in the current
+tab. POST requests, HTTP targets and special paths retain the explicit target
+parameter.
 Existing multi-level entry URLs should be updated to this flattened format.
 For local development:
 
