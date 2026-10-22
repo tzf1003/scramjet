@@ -1,6 +1,7 @@
 import { URLMeta, rewriteUrl, unrewriteUrl } from "@rewriters/url";
 import { ScramjetContext } from "@/shared";
 import { String } from "@/shared/snapshot";
+import { rewriteFontCss } from "@/shared/fonts";
 
 export function rewriteCss(
 	css: string,
@@ -63,5 +64,7 @@ function handleCss(
 		);
 	});
 
-	return css;
+	return type === "rewrite" && context.config.environment?.protectFonts
+		? rewriteFontCss(css)
+		: css;
 }

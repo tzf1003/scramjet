@@ -76,6 +76,8 @@ export const Error = globalThis.Error as ErrorConstructor & {
 };
 export const TypeError = globalThis.TypeError;
 export const Date_now = globalThis.Date.now;
+export const Intl_DateTimeFormat = globalThis.Intl.DateTimeFormat;
+export const Intl_getCanonicalLocales = globalThis.Intl.getCanonicalLocales;
 export const Math_random = globalThis.Math.random;
 export const Math_min = globalThis.Math.min;
 export const Math_max = globalThis.Math.max;

@@ -1,3 +1,8 @@
+import {
+	japanEnvironment,
+	loadEnvironment,
+	saveEnvironment,
+} from "../environment";
 import { createStore, css, type Component } from "dreamland/core";
 import type { ScramjetFlags } from "@mercuryworkshop/scramjet";
 import { defaultConfigDev } from "@mercuryworkshop/scramjet";
@@ -46,10 +51,37 @@ const FlagEditor: Component<
 	{
 		isOpen: boolean;
 		cacheBustStatus: string;
+		timezone: string;
+		languages: string;
+		protectFonts: boolean;
+		environmentStatus: string;
 	}
 > = function (cx) {
 	this.isOpen = false;
 	this.cacheBustStatus = "";
+	const environment = loadEnvironment();
+	this.timezone = environment.timezone ?? "";
+	this.languages = environment.languages?.join(", ") ?? "";
+	this.protectFonts = environment.protectFonts ?? true;
+	this.environmentStatus = "";
+	const applyEnvironment = async () => {
+		try {
+			const languages = this.languages
+				.split(",")
+				.map((value) => value.trim())
+				.filter(Boolean);
+			controller.scramjetConfig.environment = saveEnvironment({
+				timezone: this.timezone.trim() || undefined,
+				languages: languages.length ? languages : undefined,
+				protectFonts: this.protectFonts,
+			});
+			await cachePlugin.bust();
+			this.environmentStatus = "Saved. Reload the proxied page to apply.";
+		} catch (error) {
+			this.environmentStatus =
+				error instanceof Error ? error.message : String(error);
+		}
+	};
 
 	const toggleFlag = (flag: keyof ScramjetFlags, value: boolean) => {
 		flagStore[flag] = value;
@@ -111,6 +143,66 @@ const FlagEditor: Component<
 					{use(this.cacheBustStatus).andThen(
 						<div class="cache-bust-status">{use(this.cacheBustStatus)}</div>
 					)}
+					<fieldset class="environment-settings">
+						<legend>Browser environment</legend>
+						<label>
+							Time zone (IANA)
+							<input
+								aria-label="Time zone"
+								value={use(this.timezone)}
+								placeholder="Asia/Tokyo"
+								on:input={(event: Event) => {
+									this.timezone = (event.target as HTMLInputElement).value;
+								}}
+							/>
+						</label>
+						<label>
+							Languages (in preference order)
+							<input
+								aria-label="Languages"
+								value={use(this.languages)}
+								placeholder="ja-JP, ja, en"
+								on:input={(event: Event) => {
+									this.languages = (event.target as HTMLInputElement).value;
+								}}
+							/>
+						</label>
+						<p>Leave a field empty to use the browser setting.</p>
+						<label>
+							<input
+								type="checkbox"
+								aria-label="Protect fonts"
+								checked={use(this.protectFonts)}
+								on:change={(event: Event) => {
+									this.protectFonts = (
+										event.target as HTMLInputElement
+									).checked;
+								}}
+							/>
+							Restrict local fonts &amp; use fixed Twemoji
+						</label>
+						<p>
+							Font protection is best effort. Layout and rendering may differ
+							between browsers.
+						</p>
+						<div class="header-actions">
+							<button class="reset-button" on:click={applyEnvironment}>
+								Apply environment
+							</button>
+							<button
+								class="reset-button"
+								on:click={() => {
+									this.timezone = japanEnvironment.timezone!;
+									this.languages = japanEnvironment.languages!.join(", ");
+									this.protectFonts = true;
+									applyEnvironment();
+								}}
+							>
+								Japan preset
+							</button>
+						</div>
+						<p role="status">{use(this.environmentStatus)}</p>
+					</fieldset>
 					<div class="flags-list">
 						{(Object.keys(flagStore) as Array<keyof ScramjetFlags>).map(
 							(flag) => (
@@ -218,6 +310,22 @@ FlagEditor.style = css`
 		z-index: 1000;
 	}
 
+	@media (max-width: 600px) {
+		:scope.inline {
+			position: fixed;
+			top: 58px;
+			right: 8px;
+		}
+		:scope.inline .editor-panel {
+			position: fixed;
+			top: 94px;
+			left: 8px;
+			right: 8px;
+			min-width: 0;
+			max-height: calc(100dvh - 130px);
+		}
+	}
+
 	.header {
 		display: flex;
 		justify-content: space-between;
@@ -272,6 +380,34 @@ FlagEditor.style = css`
 		text-align: right;
 		margin-bottom: 0.5em;
 		font-family: "Courier New", monospace;
+	}
+
+	.environment-settings {
+		margin: 0 0 1em;
+		border: 1px solid #555;
+	}
+	.environment-settings label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3em;
+		margin: 0.6em 0;
+	}
+	.environment-settings input {
+		width: 100%;
+		box-sizing: border-box;
+		padding: 0.5em;
+		background: #222;
+		border: 1px solid #666;
+		color: white;
+	}
+	.environment-settings p {
+		font-size: 12px;
+		line-height: 1.5;
+		color: #ccc;
+	}
+	.environment-settings input[type="checkbox"] {
+		width: auto;
+		align-self: flex-start;
 	}
 
 	.flags-list {

@@ -56,3 +56,75 @@ pnpm dev
 ```
 
 The demo page for scramjet should now be running at <http://localhost:4141> and should rebuild upon a file being changed (excluding the rewriter).
+
+### Browser environment profiles
+
+The demo starts with the Japan preset (`Asia/Tokyo`, `ja-JP, ja, en`). Open
+**Flag Editor → Browser environment** to customize it, then click
+**Apply environment** and reload the proxied page. Settings persist in this
+browser. Empty fields restore the corresponding browser default.
+
+Integrations opt in through the controller; the core library defaults to the
+native browser environment:
+
+```ts
+const controller = new Controller({
+	// ...existing initialization...
+	scramjetConfig: {
+		environment: {
+			timezone: "Asia/Tokyo",
+			locale: "ja-JP",
+			languages: ["ja-JP", "ja", "en"],
+			protectFonts: true,
+		},
+	},
+});
+```
+
+Profiles cover `navigator.language` / `languages`, default `Intl` formatting,
+local `Date` getters, setters, construction and formatting, and outgoing HTTP
+`Accept-Language`. `locale` becomes the first language; otherwise the first
+`languages` entry supplies it. Values are validated and canonicalized before
+controller initialization. Explicit locale/time-zone options, UTC operations,
+and timestamps retain their meaning. Set the profile before navigating; reload
+existing pages and recreate workers when changing it.
+
+These are JavaScript API overrides within Scramjet-managed realms. They do not
+change the operating system, IP location, or browser UI. An uninstrumented realm
+or another browser fingerprint can still reveal the host environment; the
+profile is not a guarantee against environment detection. Date parsing of
+nonstandard legacy strings remains browser-dependent. For complete native
+locale/time-zone behavior, configure an isolated browser profile as well.
+
+The Runway `environment-` suite compares six profiles against native browser
+contexts. Window/iframe checks cover Chromium, Firefox and WebKit; classic and
+module Worker checks cover Chromium and WebKit. Firefox Worker validation is
+excluded because the existing `workers-classic-scope` control also times out
+with the native environment profile in this harness.
+
+The demo enables `protectFonts` by default. This option replaces explicit
+requests for common Simplified/Traditional Chinese system fonts (including
+PingFang, Microsoft YaHei, Hiragino Sans GB, STHeiti and STSong) with an unavailable
+family, preserving the following fallbacks. CSS names are parsed, including
+escaped identifiers; content strings and selectors retain their meaning.
+Local `@font-face`/`FontFace` sources are redirected to an unavailable face and
+`queryLocalFonts()` returns an empty list. Remote webfonts remain available.
+`FontFaceSet.check()` and `load()` use the same rewritten families as rendering;
+a missing system family can legitimately yield `true` from `check()`.
+
+Emoji uses bundled **Twemoji Mozilla v0.7.0 / Twemoji 14**, with a pinned file hash
+and [upstream attribution](packages/core/assets/fonts/README.md). The font is
+loaded from bytes before page scripts run and prepended to rewritten font
+families in DOM/CSS, Canvas and OffscreenCanvas, including instrumented workers.
+This provides a fixed artwork source. The font
+adds approximately 1.5 MB of binary data (base64-encoded) to the client bundle.
+
+Font protection is best effort in a local browser. Generic-family fallback can
+still use host CJK fonts. CSS variables/system-font shorthands, uninstrumented
+realms, page-supplied fonts, modifications to the injected font set/stylesheets,
+image/SVG resources rendered outside the document, newer Emoji sequences and
+OS/GPU rasterization can expose differences. Font substitutions can change
+layout. The `fonts-` suite checks real DOM/Canvas metrics, local font loading,
+escaped names, SVG attributes, iframe installation, and Emoji pixels against
+the pinned font in the same browser. Cross-platform pixel identity is not an
+acceptance claim.

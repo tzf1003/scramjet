@@ -1,6 +1,7 @@
 import { rewriteCss, unrewriteCss } from "@rewriters/css";
 import { ScramjetClient } from "@client/index";
 import { Reflect_apply, Reflect_get, Reflect_set } from "@/shared/snapshot";
+import { rewriteFontValue, rewriteFontSource } from "@/shared/fonts";
 
 export default function (client: ScramjetClient, self: GlobalThis) {
 	const { CSSStyleDeclaration: NativeCSSStyleDeclaration } = self;
@@ -8,6 +9,21 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		apply(ctx) {
 			if (!ctx.args[1]) return;
 			ctx.args[1] = rewriteCss(ctx.args[1], client.context, client.meta);
+			if (
+				client.config.environment?.protectFonts &&
+				typeof ctx.args[0] === "string" &&
+				/^(font|font-family)$/i.test(ctx.args[0])
+			)
+				ctx.args[1] = rewriteFontValue(
+					ctx.args[1],
+					ctx.args[0].toLowerCase()
+				);
+			if (
+				client.config.environment?.protectFonts &&
+				typeof ctx.args[0] === "string" &&
+				ctx.args[0].toLowerCase() === "src"
+			)
+				ctx.args[1] = rewriteFontSource(ctx.args[1]);
 		},
 	});
 
@@ -59,49 +75,79 @@ export default function (client: ScramjetClient, self: GlobalThis) {
 		apply(ctx) {
 			if (!ctx.args[1]) return;
 			ctx.args[1] = rewriteCss(ctx.args[1], client.context, client.meta);
+			if (
+				client.config.environment?.protectFonts &&
+				typeof ctx.args[0] === "string" &&
+				/^(font|font-family)$/i.test(ctx.args[0])
+			)
+				ctx.args[1] = rewriteFontValue(
+					ctx.args[1],
+					ctx.args[0].toLowerCase()
+				);
 		},
 	});
 
-	client.Trap("HTMLElement.prototype.style", {
-		get(ctx) {
-			// unfortunate and dumb hack. we have to trap every property of this
-			// since the prototype chain is fucked
+	client.Trap(
+		[
+			"HTMLElement.prototype.style",
+			"SVGElement.prototype.style",
+			"CSSStyleRule.prototype.style",
+		],
+		{
+			get(ctx) {
+				// unfortunate and dumb hack. we have to trap every property of this
+				// since the prototype chain is fucked
 
-			const style = ctx.get() as CSSStyleDeclaration;
+				const style = ctx.get() as CSSStyleDeclaration;
 
-			return new Proxy(style, {
-				get(target, prop) {
-					const value = Reflect_get(target, prop);
+				return new Proxy(style, {
+					get(target, prop) {
+						const value = Reflect_get(target, prop);
 
-					if (typeof value === "function") {
-						return new Proxy(value, {
-							apply(target, that, args) {
-								return Reflect_apply(target, style, args);
-							},
-						});
-					}
+						if (typeof value === "function") {
+							return new Proxy(value, {
+								apply(target, that, args) {
+									return Reflect_apply(target, style, args);
+								},
+							});
+						}
 
-					if (prop in NativeCSSStyleDeclaration.prototype) return value;
-					if (!value) return value;
+						if (prop in NativeCSSStyleDeclaration.prototype) return value;
+						if (!value) return value;
 
-					return unrewriteCss(value, client.context);
-				},
-				set(target, prop, value) {
-					if (prop == "cssText" || value == "" || typeof value !== "string") {
-						return Reflect_set(target, prop, value);
-					}
+						return unrewriteCss(value, client.context);
+					},
+					set(target, prop, value) {
+						if (
+							prop == "cssText" ||
+							value == "" ||
+							typeof value !== "string"
+						) {
+							return Reflect_set(target, prop, value);
+						}
+						if (
+							client.config.environment?.protectFonts &&
+							(prop === "font" ||
+								prop === "fontFamily" ||
+								prop === "font-family")
+						)
+							value = rewriteFontValue(
+								value,
+								prop === "font" ? "font" : "font-family"
+							);
 
-					return Reflect_set(
-						target,
-						prop,
-						rewriteCss(value, client.context, client.meta)
-					);
-				},
-			});
-		},
-		set(ctx, value: string) {
-			// this will actually run the trap for cssText. don't rewrite it here
-			ctx.set(value);
-		},
-	});
+						return Reflect_set(
+							target,
+							prop,
+							rewriteCss(value, client.context, client.meta)
+						);
+					},
+				});
+			},
+			set(ctx, value: string) {
+				// this will actually run the trap for cssText. don't rewrite it here
+				ctx.set(value);
+			},
+		}
+	);
 }
