@@ -34,10 +34,24 @@ session to the existing issuer. The access key is not returned by its APIs.
   `PROXY_DOMAIN`: retain the deployment's existing values.
 - Restart the app after rotating the access key; this also closes existing
   proxy sockets. HTTPS must be provided by the deployment gateway.
+- `TRUSTED_PROXY_CIDRS`: comma-separated CIDRs of trusted TCP peers. The default
+  uses the socket address for login and WebSocket limits. A single valid
+  `X-Real-IP` is accepted only from one of these peers; malformed values fall
+  back to the socket address. Invalid CIDR configuration stops startup.
+  Restrict this list to the gateway, keep the app port private, and have the
+  public edge overwrite `X-Real-IP` with its verified client address.
+  `package-release.py --trusted-proxy-ip <IPv4>` pins the gateway container's
+  address and configures that exact `/32` peer after this edge check.
 
 The production frontend uses `VITE_GATEWAY_ACCESS=1` and the configured
 `VITE_PROXY_DOMAIN`. It loads `/api/config` and supports the standard hostname
 with `__scramjet_url` as well as wildcard hostnames.
+
+Camera, microphone and screen capture are enabled in the proxy iframe. The
+browser controls device and screen permission prompts. Browser permissions
+belong to the proxy origin, which multiple target sites share; an existing
+device grant can therefore apply to another proxied target. Scramjet's
+shared-origin JavaScript proxy is not a security sandbox for hostile sites.
 
 ## Build and validation
 

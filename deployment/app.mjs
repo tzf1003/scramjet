@@ -10,6 +10,7 @@ import {
 	signCredentialSession,
 } from "./credential-server.mjs";
 import { createAccessControl, LEGACY_COOKIE } from "./access-key.mjs";
+import { createClientIp } from "./client-ip.mjs";
 
 const env = process.env;
 const secret = env.CREDENTIAL_SESSION_SECRET;
@@ -54,7 +55,7 @@ function json(res, code, value) {
 	});
 	res.end(JSON.stringify(value));
 }
-const ip = (req) => req.headers["x-real-ip"] || req.socket.remoteAddress;
+const ip = createClientIp(env.TRUSTED_PROXY_CIDRS);
 async function serve(res, name) {
 	const file = path.resolve(root, "." + name);
 	if (!file.startsWith(root + path.sep))

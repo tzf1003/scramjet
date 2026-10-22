@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import net from "node:net";
 import http from "node:http";
+import { createClientIp } from "../../deployment/client-ip.mjs";
 import {
 	createAccessControl,
 	ACCESS_COOKIE,
@@ -20,6 +21,34 @@ import {
 } from "../../deployment/public/access-key-client.js";
 
 const key = crypto.randomBytes(32).toString("base64url");
+test("forwarded client identity requires a trusted TCP peer and a single valid address", () => {
+	const request = (remoteAddress, value) => ({
+		socket: { remoteAddress },
+		headers: { "x-real-ip": value },
+	});
+	assert.equal(
+		createClientIp()(request("::ffff:192.0.2.1", "203.0.113.9")),
+		"192.0.2.1"
+	);
+	const trusted = createClientIp("192.0.2.0/24,2001:db8::/32");
+	assert.equal(
+		trusted(request("::ffff:192.0.2.1", "203.0.113.9")),
+		"203.0.113.9"
+	);
+	assert.equal(
+		trusted(request("2001:db8::1", "::ffff:203.0.113.9")),
+		"203.0.113.9"
+	);
+	assert.equal(trusted(request("198.51.100.1", "203.0.113.9")), "198.51.100.1");
+	for (const value of [
+		undefined,
+		"bad",
+		"203.0.113.9, 203.0.113.10",
+		["203.0.113.9"],
+	])
+		assert.equal(trusted(request("192.0.2.1", value)), "192.0.2.1");
+	assert.throws(() => createClientIp("broken"));
+});
 const memoryStorage = () => {
 	const values = new Map();
 	return {
@@ -135,6 +164,7 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 			TURN_STATIC_AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
 			TURN_URLS: "turn:192.0.2.1:3478",
 			SOURCE_COMMIT: "access-key-test",
+			TRUSTED_PROXY_CIDRS: "",
 		},
 		stdio: ["ignore", "pipe", "pipe"],
 	});
@@ -249,7 +279,14 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		421
 	);
 
-	async function upgrade(token, origin = "https://proxy.test") {
+	const heldSockets = [];
+	t.after(() => heldSockets.forEach((socket) => socket.destroy()));
+	async function upgrade(
+		token,
+		origin = "https://proxy.test",
+		forwarded = "",
+		hold = false
+	) {
 		const socket = net.connect(port, "127.0.0.1");
 		let response = "";
 		const result = new Promise((resolve, reject) => {
@@ -262,18 +299,42 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 				response += chunk.toString();
 				if (response.includes("\r\n")) {
 					resolve(response.split("\r\n")[0]);
-					socket.destroy();
+					if (hold) {
+						socket.setTimeout(0);
+						heldSockets.push(socket);
+					} else socket.destroy();
 				}
 			});
 		});
 		socket.write(
-			`GET /wisp/ HTTP/1.1\r\nHost: proxy.test\r\nOrigin: ${origin}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${crypto.randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\nCookie: ${token}\r\n\r\n`
+			`GET /wisp/ HTTP/1.1\r\nHost: proxy.test\r\nOrigin: ${origin}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: ${crypto.randomBytes(16).toString("base64")}\r\nSec-WebSocket-Version: 13\r\nCookie: ${token}\r\nX-Real-IP: ${forwarded}\r\n\r\n`
 		);
 		return result;
 	}
 	assert.match(await upgrade(""), /401/);
 	assert.match(await upgrade(cookie, "https://evil.test"), /401/);
-	assert.match(await upgrade(cookie), /101/);
+	for (let index = 0; index < 13; index++)
+		assert.match(
+			await upgrade(
+				cookie,
+				"https://proxy.test",
+				`203.0.113.${index + 1}`,
+				true
+			),
+			index < 12 ? /101/ : /429/
+		);
+	heldSockets.forEach((socket) => socket.destroy());
+	for (let index = 0; index < 11; index++) {
+		const response = await call("/api/login", {
+			method: "POST",
+			headers: {
+				origin: "https://proxy.test",
+				"x-real-ip": `203.0.113.${index + 1}`,
+			},
+			body: JSON.stringify({ accessKey: "wrong" }),
+		});
+		assert.equal(response.status, index < 10 ? 401 : 429);
+	}
 	const logout = await call("/api/logout", {
 		method: "POST",
 		headers: { origin: "https://proxy.test", cookie },
