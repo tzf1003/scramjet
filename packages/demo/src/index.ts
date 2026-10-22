@@ -25,6 +25,8 @@ import {
 	prepareHandoff,
 	receiveHandoff,
 } from "./handoff";
+import { isBlankDocument, syncShellSurface } from "./chrome";
+import { failLoading, finishLoading, setStage, showHost } from "./loading";
 
 const app = document.getElementById("app")!;
 
@@ -78,8 +80,11 @@ async function main() {
 		: resolveTarget(new URL(entry.origin), base);
 	const handoff = gatewayEntry ? null : consumeHandoff(entry, base);
 	document.title = target.hostname;
+	showHost(target.hostname);
+	setStage("正在初始化代理", 0.2);
 
 	const serviceworker = await registerWorker();
+	setStage("正在建立安全连接", 0.45);
 	const wispUrl = new URL(import.meta.env.VITE_WISP_URL || "/wisp/", entry);
 	if (wispUrl.protocol === "https:") wispUrl.protocol = "wss:";
 	if (wispUrl.protocol === "http:") wispUrl.protocol = "ws:";
@@ -111,6 +116,7 @@ async function main() {
 		},
 	});
 	await controller.wait();
+	setStage("正在打开网页", 0.7);
 	if (handoff) {
 		controller.cookieJar.load(
 			JSON.stringify({
@@ -134,6 +140,7 @@ async function main() {
 		}
 		document.title = url.hostname;
 	};
+	const syncSurface = syncShellSurface(iframe);
 	const watcher = new ManagedPlugin("demo-navigation", []);
 	const frame = controller.createFrame(iframe, {
 		plugins: [
@@ -197,6 +204,17 @@ async function main() {
 		if (!context.isTopLevel) return;
 		currentTarget = new URL(context.client.url.href);
 		syncAddress(currentTarget.href);
+		syncSurface();
+		setStage("正在加载页面内容", 0.9);
+		// Reveal once the document has parsed; waiting for "load" would also
+		// wait for every image and ad on the page.
+		if (context.window.document.readyState === "loading")
+			context.window.document.addEventListener(
+				"DOMContentLoaded",
+				finishLoading,
+				{ once: true }
+			);
+		else finishLoading();
 		watcher.tap(
 			context.client.hooks.lifecycle.navigate,
 			({ type }, { url }) => {
@@ -213,12 +231,18 @@ async function main() {
 	});
 	iframe.addEventListener("load", () => {
 		try {
-			document.title = iframe.contentDocument?.title || target.hostname;
+			const doc = iframe.contentDocument;
+			// Inserting the iframe fires a load for its initial about:blank, even
+			// when src is already set, so check the document that actually loaded.
+			if (!doc || isBlankDocument(doc)) return;
+			finishLoading();
+			document.title = doc.title || target.hostname;
 		} catch {
 			// A document can be temporarily inaccessible while it navigates.
 		}
 	});
-	app.replaceChildren(iframe);
+	// The loader overlays the iframe until the first document is ready.
+	app.prepend(iframe);
 	if (handoff) {
 		const context = frame.context;
 		// The controller exposes native URLs; core metadata uses branded URL types.
@@ -244,9 +268,7 @@ async function main() {
 
 main().catch((error) => {
 	console.error("Proxy initialization failed:", error);
-	const message = document.createElement("p");
-	message.setAttribute("role", "alert");
-	message.textContent =
-		error instanceof Error ? error.message : "代理加载失败，请刷新重试。";
-	app.replaceChildren(message);
+	failLoading(
+		error instanceof Error ? error.message : "代理加载失败，请刷新重试。"
+	);
 });
