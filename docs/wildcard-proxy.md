@@ -116,7 +116,9 @@ https://example-com-9443.derp.xs2api.com:8443/test/
 同时适用于来源和目标域名的 Cookie，保留 HttpOnly 等属性，并合入目标控制器的
 持久化存储。目标入口已有的其他 Cookie 保持其作用域。
 交接消息核验窗口、代理域名、协议、代理端口和随机令牌。状态有效期为 30 秒，
-消费后删除；Cookie 不进入地址栏。首个请求沿用来源和 SameSite 导航上下文。
+消费后删除；Cookie 不进入地址栏。Cookie 作用域通过公共后缀列表校验，包含
+私有后缀（如 `github.io`）。首个请求的来源、Referer 和 SameSite 上下文按
+发送方实际代理域名校验；跨站交接即使隐藏 Referer 也会执行跨站 Cookie 限制。
 `localStorage`、IndexedDB 等网页存储仍按代理域名独立，交接不提供跨标签页的
 持续 Cookie 同步。目标服务器应允许同一代理根域名下的入口相互嵌入，
 并将 `GET /__scramjet_handoff` 回退到同一个 `index.html`。

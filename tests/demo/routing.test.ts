@@ -204,6 +204,35 @@ test("cookie handoff includes only destination domain cookies", () => {
 	);
 });
 
+test("cookie handoff rejects ICANN and private public suffix scopes", () => {
+	for (const [source, target, suffix] of [
+		["attacker.com", "victim.com", "com"],
+		["attacker.co.uk", "victim.co.uk", "co.uk"],
+		["attacker.github.io", "victim.github.io", "github.io"],
+	]) {
+		const cookies = JSON.stringify({
+			[`.${suffix}@/@session`]: {
+				domain: `.${suffix}`,
+				name: "session",
+				value: "injected",
+				path: "/",
+			},
+		});
+		assert.equal(
+			transferableCookies(
+				cookies,
+				new URL(`https://${source}`),
+				new URL(`https://${target}`)
+			),
+			"{}"
+		);
+		assert.equal(
+			destinationCookies(cookies, new URL(`https://${target}`)),
+			"{}"
+		);
+	}
+});
+
 test("handoff state is scoped to one target, expires and is consumed once", () => {
 	const descriptor = Object.getOwnPropertyDescriptor(
 		globalThis,
@@ -224,14 +253,43 @@ test("handoff state is scoped to one target, expires and is consumed once", () =
 			source: entry.origin,
 			target: resolveTarget(entry, base).href,
 			cookies: "{}",
-			referrer: "https://example.com/",
-			initiator: "https://example.com",
+			referrer: "https://baidu.com/",
+			initiator: "https://baidu.com",
+			fetchSite: "same-origin" as const,
 			crossSiteRedirect: false,
 			createdAt: Date.now(),
 		};
 		stored = JSON.stringify(state);
 		assert.deepEqual(consumeHandoff(entry, base), state);
 		assert.equal(consumeHandoff(entry, base), undefined);
+		const destination = new URL(
+			`https://accounts-example-com.${base}:8443/login`
+		);
+		for (const referrer of ["", "https://accounts.example.com/private"]) {
+			stored = JSON.stringify({
+				...state,
+				target: "https://accounts.example.com/login",
+				referrer,
+				initiator: "https://accounts.example.com",
+				fetchSite: "same-origin",
+			});
+			const verified = consumeHandoff(destination, base)!;
+			assert.equal(verified.initiator, "https://baidu.com");
+			assert.equal(verified.referrer, referrer ? "https://baidu.com/" : "");
+			assert.equal(verified.fetchSite, "cross-site");
+			assert.equal(verified.crossSiteRedirect, true);
+		}
+		// Separate tenants on private suffixes are cross-site, too.
+		stored = JSON.stringify({
+			...state,
+			source: `https://attacker-github-io.${base}:8443`,
+			target: "https://victim.github.io/",
+		});
+		assert.equal(
+			consumeHandoff(new URL(`https://victim-github-io.${base}:8443/`), base)
+				?.crossSiteRedirect,
+			true
+		);
 		for (const patch of [
 			{ target: "https://baidu.com/other" },
 			{ createdAt: Date.now() - 31_000 },

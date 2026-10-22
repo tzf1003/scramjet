@@ -1,4 +1,5 @@
 import { HANDOFF_PATH, proxyUrl, resolveTarget } from "./routing.ts";
+import { getDomain } from "tldts";
 
 const STORAGE_KEY = "__scramjet_navigation";
 const MESSAGE = "scramjet-navigation";
@@ -60,6 +61,8 @@ export function destinationCookies(serialized: string, target: URL): string {
 				)
 					return false;
 				const domain = cookie.domain.replace(/^\./, "").toLowerCase();
+				// Domain cookies may never span an ICANN or private public suffix.
+				if (!getDomain(domain, { allowPrivateDomains: true })) return false;
 				return (
 					target.hostname === domain ||
 					(!cookie.hostOnly && target.hostname.endsWith(`.${domain}`))
@@ -67,6 +70,46 @@ export function destinationCookies(serialized: string, target: URL): string {
 			})
 		)
 	);
+}
+
+/** Security metadata is bounded by the logical origin authenticated by postMessage. */
+function verifiedNavigation(
+	state: NavigationState,
+	base: string
+): NavigationState {
+	const source = resolveTarget(new URL(state.source), base);
+	const target = new URL(state.target);
+	const site = (url: URL) =>
+		`${url.protocol}//${getDomain(url.hostname, { allowPrivateDomains: true }) || url.hostname}`;
+	const observed =
+		source.origin === target.origin
+			? "same-origin"
+			: site(source) === site(target)
+				? "same-site"
+				: "cross-site";
+	let referrer = state.referrer;
+	if (referrer) {
+		const supplied = new URL(referrer);
+		if (
+			supplied.origin !== source.origin ||
+			supplied.username ||
+			supplied.password
+		)
+			referrer = source.origin + "/";
+	}
+	return {
+		...state,
+		referrer,
+		initiator: source.origin,
+		// A sender can preserve a more restrictive redirect context only.
+		fetchSite:
+			state.fetchSite === "cross-site" || observed === "cross-site"
+				? "cross-site"
+				: state.fetchSite === "same-site" || observed === "same-site"
+					? "same-site"
+					: "same-origin",
+		crossSiteRedirect: state.crossSiteRedirect || observed === "cross-site",
+	};
 }
 
 export function transferableCookies(
@@ -171,7 +214,10 @@ export function receiveHandoff(entry: URL, base: string): boolean {
 			validState(event.data.state, entry, base)
 		) {
 			try {
-				sessionStorage.setItem(STORAGE_KEY, JSON.stringify(event.data.state));
+				sessionStorage.setItem(
+					STORAGE_KEY,
+					JSON.stringify(verifiedNavigation(event.data.state, base))
+				);
 				window.parent.postMessage(
 					{ type: MESSAGE, token, action: "stored" },
 					event.origin
@@ -202,7 +248,7 @@ export function consumeHandoff(
 			validState(state, entry, base) &&
 			state.target === resolveTarget(entry, base).href
 		)
-			return state;
+			return verifiedNavigation(state, base);
 	} catch {
 		// Storage can be disabled; navigation keeps its original controller in that case.
 	}

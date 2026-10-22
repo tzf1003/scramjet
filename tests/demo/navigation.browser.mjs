@@ -55,6 +55,10 @@ const vite = await createServer({
 					if (url.pathname === "/start" || url.pathname === "/seed") {
 						headers.push([
 							"Set-Cookie",
+							"poison=blocked; Domain=com; Path=/; SameSite=None; Secure",
+						]);
+						headers.push([
+							"Set-Cookie",
 							"shared=keep; Domain=example.com; Path=/; SameSite=Lax; HttpOnly",
 						]);
 						headers.push([
@@ -126,6 +130,7 @@ try {
 		.join(";");
 	assert.ok(cookies.includes("shared=keep"), cookies);
 	assert.ok(!cookies.includes("sourceOnly"), cookies);
+	assert.ok(!cookies.includes("poison="), cookies);
 	await page.goBack();
 	await page.waitForURL(start);
 	await page.frameLocator("#app > iframe").locator("#path").waitFor();
@@ -280,6 +285,60 @@ try {
 	);
 	results.push(
 		"cross-site handoff retains Lax cookies and blocks Strict on first request"
+	);
+	for (const referrer of ["", "https://accounts.example.com/private"]) {
+		await page.goto(source);
+		await page.frameLocator("#app > iframe").locator("#path").waitFor();
+		const attackOffset = requests.length;
+		await page.evaluate(
+			async ({ port, referrer }) => {
+				const { prepareHandoff } = await import("/src/handoff.ts");
+				const destination = new URL(
+					`http://accounts-example-com.localhost:${port}/attack`
+				);
+				const ready = await prepareHandoff(destination, {
+					source: location.origin,
+					target: "https://accounts.example.com/attack",
+					cookies: "{}",
+					referrer,
+					initiator: "https://accounts.example.com",
+					fetchSite: "same-origin",
+					crossSiteRedirect: false,
+					createdAt: Date.now(),
+				});
+				if (!ready) throw new Error("Attack fixture handoff was not accepted");
+				location.assign(destination);
+			},
+			{ port, referrer }
+		);
+		await page.waitForURL(
+			`http://accounts-example-com.localhost:${port}/attack`
+		);
+		await page.frameLocator("#app > iframe").locator("#path").waitFor();
+		const attack = requests
+			.slice(attackOffset)
+			.find((r) => r.url === "https://accounts.example.com/attack");
+		assert.ok(attack);
+		assert.ok(
+			!attack.headers.some(
+				([k, v]) => k.toLowerCase() === "cookie" && v.includes("strict=private")
+			)
+		);
+		assert.ok(
+			!attack.headers.some(
+				([k, v]) =>
+					k.toLowerCase() === "referer" &&
+					v.startsWith("https://accounts.example.com")
+			)
+		);
+		assert.ok(
+			attack.headers.some(
+				([k, v]) => k.toLowerCase() === "sec-fetch-site" && v === "cross-site"
+			)
+		);
+	}
+	results.push(
+		"forged handoff metadata and empty referrer preserve cross-site cookie restrictions"
 	);
 	await page.screenshot({ path: out + "/navigation.png" });
 	assert.deepEqual(errors, []);

@@ -14,9 +14,10 @@
 		"vite-plugin-static-copy": "^3.1.6"
 	},
 	"dependencies": {
+		"@mercuryworkshop/libcurl-transport": "catalog:",
+		"@mercuryworkshop/scramjet": "workspace:*",
 		"@mercuryworkshop/scramjet-controller": "workspace:*",
 		"@mercuryworkshop/scramjet-utils": "workspace:*",
-		"@mercuryworkshop/scramjet": "workspace:*",
-		"@mercuryworkshop/libcurl-transport": "catalog:"
+		"tldts": "^7.4.19"
 	}
 }
