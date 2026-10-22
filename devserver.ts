@@ -33,8 +33,6 @@ const WISP_PORT = process.env.WISP_PORT || 4142;
 
 if (process.env.VITE_WISP_URL) {
 	process.env.VITE_WISP_URL = normalizeWebsocketUrl(process.env.VITE_WISP_URL);
-} else {
-	process.env.VITE_WISP_URL = `ws://localhost:${WISP_PORT}/`;
 }
 
 const wispserver = http.createServer((req, res) => {
@@ -78,7 +76,7 @@ const lines = [
 	),
 	black()(
 		`${accent("wisp")} ${connector} ${urlColor(
-			process.env.VITE_WISP_URL ?? ""
+			process.env.VITE_WISP_URL ?? `ws://localhost:${DEMO_PORT}/wisp/`
 		)}`
 	),
 	black()(chalk.dim(`[${branch}] ${commit} scramjet/${version}`)),

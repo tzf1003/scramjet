@@ -222,9 +222,6 @@ importers:
 
   packages/demo:
     dependencies:
-      '@mercuryworkshop/epoxy-transport':
-        specifier: 'catalog:'
-        version: 3.0.1
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
         version: 2.0.5
@@ -237,12 +234,6 @@ importers:
       '@mercuryworkshop/scramjet-utils':
         specifier: workspace:*
         version: link:../utils
-      dreamland:
-        specifier: ^0.1.3
-        version: 0.1.3
-      monaco-editor:
-        specifier: ^0.54.0
-        version: 0.54.0
     devDependencies:
       vite:
         specifier: ^7.3.1
@@ -1664,18 +1655,12 @@ packages:
     resolution: {integrity: sha512-gYzvtM72ZtxQO0T048kd6HWSbbGCNOUwcnfQ01cqIJ4X2IYKFFHZ5mKvrQETcFXxsRObZulDaKmy//R7TPtsBg==}
     engines: {node: '>=20.19.0'}
 
-  dompurify@3.1.7:
-    resolution: {integrity: sha512-VaTstWtsneJY8xzy7DekmYWEOZcmzIe3Qb3zPd4STve1OBTa+e+WmS1ITQec1fZYXI3HCsOZZiSMpG6oxoWMWQ==}
-
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
 
   domutils@4.0.2:
     resolution: {integrity: sha512-qI4JLRKnSzqFqr7hAlS5xQDusBCjKSEG4t4+7aNrIQMHBcsC2TGEhuyABJdYkgSewL57PNLYEiibY2iPKhKpaA==}
     engines: {node: '>=20.19.0'}
-
-  dreamland@0.1.3:
-    resolution: {integrity: sha512-UUkyF9kW6uIRX+Tcjd1BmceNA2f2t/c8GqtAPVN7c1Z2Jcy1mOWpYzAGVS9CBKOUFZwnbF8Zeqmr4mTxA2N3yQ==}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -2102,9 +2087,6 @@ packages:
   hpack.js@2.1.6:
     resolution: {integrity: sha512-zJxVehUdMGIKsRaNt7apO2Gqp0BdqW5yaiGHXXmbpvxgBYVZnAql+BJb4RO5ad2MgpbZKn5G6nMnegrH1FcNYQ==}
 
-  htm@3.1.1:
-    resolution: {integrity: sha512-983Vyg8NwUE7JkZ6NmOqpCZ+sh1bKv2iYTlUkzlWmA5JD2acKoxd4KVxbMmxX/85mtfdnDmTFoNKcg5DGAvxNQ==}
-
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
 
@@ -2377,11 +2359,6 @@ packages:
     resolution: {integrity: sha512-F9ODfyqML2coTIsQpSkRHnLSZMtkU8Q+mSfcaIyKwy58u+8k5nvAYeiNhsyMARvzNcXJ9QfWVrcPsC9e9rAxtg==}
     engines: {node: 20 || >=22}
 
-  marked@14.0.0:
-    resolution: {integrity: sha512-uIj4+faQ+MgHgwUW1l2PsPglZLOLOT1uErt06dAPtx2kjteLAkbsd/0FiYg/MGS+i7ZKLb7w2WClxHkzOOuryQ==}
-    engines: {node: '>= 18'}
-    hasBin: true
-
   matcher@5.0.0:
     resolution: {integrity: sha512-s2EMBOWtXFc8dgqvoAzKJXxNHibcdJMV0gwqKUaw9E2JBJuGUK7DrNKrA6g/i+v72TT16+6sVm5mS3thaMLQUw==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
@@ -2496,9 +2473,6 @@ packages:
 
   mlly@1.8.0:
     resolution: {integrity: sha512-l8D9ODSRWLe2KHJSifWGwBqpTZXIXTeo8mlKjY+E2HAakaTeNpqAyBZ8GSqLzHgw4XmHmC8whvpjJNMbFZN7/g==}
-
-  monaco-editor@0.54.0:
-    resolution: {integrity: sha512-hx45SEUoLatgWxHKCmlLJH81xBo0uXP4sRkESUpmDQevfi+e7K1VuiSprK6UpQ8u4zOcKNiH0pMvHvlMWA/4cw==}
 
   mrmime@2.0.1:
     resolution: {integrity: sha512-Y3wQdFg2Va6etvQ5I82yUhGdsKrcYox6p7FfL1LbK2J4V01F9TGlepTIhnK24t7koZibmg82KGglhA1XK5IsLQ==}
@@ -2824,9 +2798,6 @@ packages:
     resolution: {integrity: sha512-3GuObel8h7Kqdjt0gxkEzaifHTqLVW56Y/bjN7PSQtkKr0w3V/QYSdt6QWYtd7A1xUtYQigtdUfgj1RvWVtorw==}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
     hasBin: true
-
-  rrweb-cssom@0.8.0:
-    resolution: {integrity: sha512-guoltQEx+9aMf2gDZ0s62EcV8lsXR+0w8915TC3ITdn2YueuNjdAYh/levpU9nFaoChh9RUS5ZdQMrKfVEN9tw==}
 
   rslog@1.3.2:
     resolution: {integrity: sha512-1YyYXBvN0a2b1MSIDLwDTqqgjDzRKxUg/S/+KO6EAgbtZW1B3fdLHAMhEEtvk1patJYMqcRvlp3HQwnxj7AdGQ==}
@@ -4929,8 +4900,6 @@ snapshots:
     dependencies:
       domelementtype: 3.0.0
 
-  dompurify@3.1.7: {}
-
   domutils@3.2.2:
     dependencies:
       dom-serializer: 2.0.0
@@ -4942,14 +4911,6 @@ snapshots:
       dom-serializer: 3.0.0
       domelementtype: 3.0.0
       domhandler: 6.0.1
-
-  dreamland@0.1.3:
-    dependencies:
-      dom-serializer: 2.0.0
-      domhandler: 5.0.3
-      htm: 3.1.1
-      htmlparser2: 12.0.0(patch_hash=741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b)
-      rrweb-cssom: 0.8.0
 
   dunder-proto@1.0.1:
     dependencies:
@@ -5443,8 +5404,6 @@ snapshots:
       readable-stream: 2.3.8
       wbuf: 1.7.3
 
-  htm@3.1.1: {}
-
   html-escaper@2.0.2: {}
 
   htmlparser2@12.0.0(patch_hash=741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b):
@@ -5673,8 +5632,6 @@ snapshots:
 
   lru-cache@11.2.2: {}
 
-  marked@14.0.0: {}
-
   matcher@5.0.0:
     dependencies:
       escape-string-regexp: 5.0.0
@@ -5773,11 +5730,6 @@ snapshots:
       pathe: 2.0.3
       pkg-types: 1.3.1
       ufo: 1.6.1
-
-  monaco-editor@0.54.0:
-    dependencies:
-      dompurify: 3.1.7
-      marked: 14.0.0
 
   mrmime@2.0.1: {}
 
@@ -6070,8 +6022,6 @@ snapshots:
       '@rollup/rollup-win32-x64-gnu': 4.52.5
       '@rollup/rollup-win32-x64-msvc': 4.52.5
       fsevents: 2.3.3
-
-  rrweb-cssom@0.8.0: {}
 
   rslog@1.3.2: {}
 
@@ -6523,6 +6473,21 @@ snapshots:
       tinyglobby: 0.2.15
       vite: 7.3.1(@types/node@26.0.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1)
 
+  vite@7.3.0(@types/node@24.9.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1):
+    dependencies:
+      esbuild: 0.27.2
+      fdir: 6.5.0(picomatch@4.0.3)
+      picomatch: 4.0.3
+      postcss: 8.5.6
+      rollup: 4.52.5
+      tinyglobby: 0.2.15
+    optionalDependencies:
+      '@types/node': 24.9.1
+      fsevents: 2.3.3
+      jiti: 2.6.1
+      terser: 5.44.1
+      yaml: 2.8.1
+
   vite@7.3.0(@types/node@26.0.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1):
     dependencies:
       esbuild: 0.27.2
@@ -6742,18 +6707,3 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   yoctocolors@2.1.2: {}
-
-  vite@7.3.0(@types/node@24.9.1)(jiti@2.6.1)(terser@5.44.1)(yaml@2.8.1):
-    dependencies:
-      esbuild: 0.27.2
-      fdir: 6.5.0(picomatch@4.0.3)
-      picomatch: 4.0.3
-      postcss: 8.5.6
-      rollup: 4.52.5
-      tinyglobby: 0.2.15
-    optionalDependencies:
-      '@types/node': 24.9.1
-      fsevents: 2.3.3
-      jiti: 2.6.1
-      terser: 5.44.1
-      yaml: 2.8.1

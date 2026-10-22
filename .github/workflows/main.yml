@@ -527,8 +527,15 @@ jobs:
           name: scramjet-utils
           path: packages/utils/dist
 
+      - name: Test wildcard proxy routing
+        run: pnpm test:proxy
+        working-directory: packages/demo
+
+      - name: Typecheck frontend
+        run: pnpm exec tsc -p packages/demo/tsconfig.json
+
       - name: Build Frontend
-        run: VITE_WISP_URL="wss://anura.pro/" pnpm build
+        run: pnpm build
         working-directory: packages/demo
 
       - name: Upload Artifact (frontend)
