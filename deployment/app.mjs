@@ -14,12 +14,6 @@ import { createClientIp } from "./client-ip.mjs";
 
 const env = process.env;
 const secret = env.CREDENTIAL_SESSION_SECRET;
-const access = createAccessControl(
-	readFileSync(
-		env.ACCESS_KEY_FILE || "/run/secrets/admin-password",
-		"utf8"
-	).trim()
-);
 if (!secret || secret.length < 32)
 	throw new Error("Invalid deployment secrets");
 const proxyDomain = (env.PROXY_DOMAIN || "")
@@ -40,6 +34,16 @@ if (
 	(gatewayHost !== proxyDomain && !gatewayHost.endsWith("." + proxyDomain))
 )
 	throw new Error("Gateway host must belong to the configured proxy domain");
+const accessScope = (env.ACCESS_COOKIE_SCOPE || "domain").trim().toLowerCase();
+if (!["domain", "host"].includes(accessScope))
+	throw new Error("ACCESS_COOKIE_SCOPE must be domain or host");
+const access = createAccessControl(
+	readFileSync(
+		env.ACCESS_KEY_FILE || "/run/secrets/admin-password",
+		"utf8"
+	).trim(),
+	{ domain: accessScope === "domain" ? proxyDomain : undefined }
+);
 function requestOrigin(req) {
 	try {
 		const url = new URL("https://" + req.headers.host);
@@ -149,7 +153,7 @@ const server = http.createServer(async (req, res) => {
 				return json(res, 401, { error: "访问密钥无效，请重新输入" });
 			attempts.delete(key);
 			res.setHeader("set-cookie", [
-				access.cookie(),
+				...access.cookie(),
 				`${LEGACY_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`,
 			]);
 			return json(res, 200, { ok: true, expiresAt: null });

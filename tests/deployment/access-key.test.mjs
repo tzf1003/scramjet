@@ -12,6 +12,7 @@ import { createClientIp } from "../../deployment/client-ip.mjs";
 import {
 	createAccessControl,
 	ACCESS_COOKIE,
+	HOST_ACCESS_COOKIE,
 	COOKIE_MAX_AGE,
 } from "../../deployment/access-key.mjs";
 import {
@@ -60,7 +61,7 @@ const memoryStorage = () => {
 
 test("a fixed key authenticates after the previous session expiry and rejects malformed cookies", () => {
 	const access = createAccessControl(key);
-	const request = { headers: { cookie: access.cookie().split(";")[0] } };
+	const request = { headers: { cookie: access.cookie()[0].split(";")[0] } };
 	const original = Date.now;
 	try {
 		Date.now = () => original() + 30 * 365 * 86400000;
@@ -70,20 +71,50 @@ test("a fixed key authenticates after the previous session expiry and rejects ma
 	}
 	for (const cookie of [
 		"",
-		`${ACCESS_COOKIE}=wrong`,
-		`${ACCESS_COOKIE}=%E0%A4%A`,
+		`${HOST_ACCESS_COOKIE}=wrong`,
+		`${HOST_ACCESS_COOKIE}=%E0%A4%A`,
 		`${request.headers.cookie}; ${request.headers.cookie}`,
 		"__Host-scramjet-turn-session=old.session",
 	]) {
 		assert.equal(access.authenticated({ headers: { cookie } }), false);
 	}
-	assert.match(access.cookie(), /Secure; HttpOnly; SameSite=Strict/);
-	assert.match(access.cookie(), new RegExp(`Max-Age=${COOKIE_MAX_AGE}`));
-	assert.equal(access.cookie().includes("Domain="), false);
+	assert.match(access.cookie()[0], /Secure; HttpOnly; SameSite=Strict/);
+	assert.match(access.cookie()[0], new RegExp(`Max-Age=${COOKIE_MAX_AGE}`));
+	assert.equal(access.cookie()[0].includes("Domain="), false);
 	assert.equal(
 		createAccessControl(crypto.randomBytes(32).toString("hex")).authenticated(
 			request
 		),
+		false
+	);
+});
+
+test("a domain-scoped cookie is shared across subdomains and still honours host-only cookies", () => {
+	const access = createAccessControl(key, { domain: "proxy.test" });
+	const [shared, legacy] = access.cookie();
+	assert.match(shared, new RegExp(`^${ACCESS_COOKIE}=`));
+	assert.match(shared, /; Domain=proxy\.test; /);
+	assert.match(shared, /Secure; HttpOnly; SameSite=Strict/);
+	assert.match(legacy, new RegExp(`^${HOST_ACCESS_COOKIE}=.*Max-Age=0`));
+	assert.equal(
+		access.authenticated({ headers: { cookie: shared.split(";")[0] } }),
+		true
+	);
+	const old = createAccessControl(key).cookie()[0].split(";")[0];
+	assert.equal(access.authenticated({ headers: { cookie: old } }), true);
+	assert.equal(
+		access.authenticated({
+			headers: { cookie: `${ACCESS_COOKIE}=wrong` },
+		}),
+		false
+	);
+	assert.ok(
+		access.clearCookies().some((value) => /^__Secure-.*Domain=proxy\.test/.test(value))
+	);
+	assert.equal(
+		createAccessControl(key)
+			.clearCookies()
+			.some((value) => value.includes("Domain=")),
 		false
 	);
 });
@@ -249,6 +280,7 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 	assert.equal(success.status, 200);
 	assert.equal((await success.json()).expiresAt, null);
 	const cookies = success.headers.getSetCookie();
+	assert.ok(cookies.some((value) => value.includes("Domain=proxy.test")));
 	const cookie = cookies
 		.find((value) => value.startsWith(ACCESS_COOKIE + "="))
 		.split(";")[0];
@@ -270,6 +302,11 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		"example-com.proxy.test",
 		"accounts-example-com-9443.proxy.test",
 	]) {
+		// The shared cookie issued on proxy.test authenticates every subdomain.
+		assert.equal(
+			(await call("/api/session", { headers: { cookie, host } })).status,
+			200
+		);
 		assert.equal(
 			(await call("/api/session", { headers: { host } })).status,
 			401
@@ -287,7 +324,8 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		assert.ok(
 			authenticated.headers
 				.getSetCookie()
-				.every((value) => !value.includes("Domain="))
+				.filter((value) => value.startsWith(ACCESS_COOKIE + "="))
+				.every((value) => value.includes("Domain=proxy.test"))
 		);
 		assert.equal(
 			await (await call("/path?q=1", { headers: { cookie, host } })).text(),

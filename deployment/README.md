@@ -9,9 +9,15 @@ visit to `/login` restores the cookie automatically and returns to the requested
 page. A rejected key is removed; temporary network errors preserve the saved key.
 Logout clears the cookie and browser storage.
 
-The cookie is `__Host-scramjet-access-key` with `Secure`, `HttpOnly`,
-`SameSite=Strict` and `Path=/`. It contains the URL-encoded access key and is
-renewed on authenticated HTTP requests. Its 400-day lifetime respects browser
+The cookie is `__Secure-scramjet-access-key` with `Domain=<PROXY_DOMAIN>`,
+`Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`, so a key entered on any
+host (the portal or a mapped target) authenticates every `*.<PROXY_DOMAIN>`
+host, including the hidden cross-site navigation handoff frames. Host-only
+`__Host-scramjet-access-key` cookies from earlier releases are still accepted
+and replaced on their next renewal. Set `ACCESS_COOKIE_SCOPE=host` to return to
+per-host cookies. It contains the URL-encoded access key and is renewed on
+authenticated HTTP requests. Because the key is sent to every subdomain, serve
+only this gateway under the proxy domain. Logout on any host clears it for all. Its 400-day lifetime respects browser
 cookie limits; the server applies no credential expiry. Stored keys are scoped
 to the browser profile and origin. Clearing site data, using a new profile or
 rotating the server key requires entering the key again. Browser policies can
@@ -58,8 +64,8 @@ non-default HTTPS ports use a numeric suffix, such as
 Configure wildcard DNS and HTTPS routing for `*.xs2api.com` at the public
 edge. Its certificate must be accepted by the upstream TLS client. The
 packager updates the internal gateway hostname; the public edge must use
-the same base domain. Each mapped hostname has its own host-only cookie
-and saved key, so the first visit to a new hostname requires the access key.
+the same base domain. The access cookie is shared across the domain, so the
+key is entered once; only the browser's localStorage copy remains per origin.
 
 Camera, microphone and screen capture are enabled in the proxy iframe. The
 browser controls device and screen permission prompts. Browser permissions
