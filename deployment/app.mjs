@@ -290,13 +290,10 @@ const server = http.createServer(async (req, res) => {
 				"/version.json",
 				"/source.tar.gz",
 				"/home.js",
-				"/cache-runtime.js",
-				"/cache-settings.js",
 			].includes(name)
 		)
 			return await serve(req, res, "/home.html");
-		if (["/home.js", "/cache-runtime.js", "/cache-settings.js"].includes(name))
-			return await serve(req, res, name);
+		if (name === "/home.js") return await serve(req, res, name);
 		if (
 			name === "/source.tar.gz" ||
 			name === "/version.json" ||

@@ -1,8 +1,6 @@
 document.querySelector("#open").addEventListener("submit", (event) => {
 	event.preventDefault();
 	try {
-		if (event.submitter?.id === "cache-bypass")
-			sessionStorage.setItem("__scramjet_cache_bypass", "1");
 		let input = document.querySelector("#url").value.trim();
 		if (!/^[a-z][a-z0-9+.-]*:/i.test(input)) input = "https://" + input;
 		const target = new URL(input);

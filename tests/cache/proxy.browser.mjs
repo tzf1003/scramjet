@@ -137,9 +137,13 @@ try {
 	// The first document sets a Cookie; warm the resulting Cookie partition once.
 	await page.reload();
 	await ready();
-	await page.locator(".resource-cache summary").click();
-	await page.getByText("清理当前站点缓存", { exact: true }).click();
-	await page.getByRole("status").filter({ hasText: "0 个资源" }).waitFor();
+	await page.evaluate(
+		async (storageUrl) => {
+			const { ResourceCache, gatewayCacheScope } = await import(storageUrl);
+			await new ResourceCache({ scope: gatewayCacheScope }).clear();
+		},
+		"/@fs" + root + "/packages/utils/src/http-cache-storage.ts"
+	);
 	const coldStart = snapshot();
 	await page.reload();
 	await ready();
@@ -169,8 +173,10 @@ try {
 		requests: warm,
 		stats: await page.evaluate(() => window.scramjetCacheStats),
 	};
-	await page.locator(".resource-cache summary").click();
-	await page.getByRole("status").filter({ hasText: "个资源" }).waitFor();
+	assert.equal(
+		await page.locator(".resource-cache, #cache-settings").count(),
+		0
+	);
 	await page.locator(".loader").waitFor({ state: "hidden" });
 	await page.screenshot({ path: out + "/cache-desktop.png" });
 	assert.equal(
@@ -180,35 +186,7 @@ try {
 	assert.equal(await page.locator("vite-error-overlay").count(), 0);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.screenshot({ path: out + "/cache-mobile.png" });
-	const toggle = page.locator(".resource-cache input[type=checkbox]");
-	await toggle.uncheck();
-	await page.getByRole("status").filter({ hasText: "0 个资源" }).waitFor();
-	let from = requests.length;
-	await page.reload();
-	await frame().locator("#ready").filter({ hasText: "Ready" }).waitFor();
-	assert.ok(requests.slice(from).some((r) => r.path === "/app.js"));
-	await page.locator(".resource-cache summary").click();
-	assert.equal(await toggle.isChecked(), false);
-	await toggle.check();
-	await page.waitForFunction(
-		() => !document.querySelector(".resource-cache input").disabled
-	);
-	await page.reload();
-	await ready();
-	await page.locator(".resource-cache summary").click();
-	from = requests.length;
-	await page.getByText("绕过缓存重新加载", { exact: true }).click();
-	await frame().locator("#ready").filter({ hasText: "Ready" }).waitFor();
-	assert.ok(requests.slice(from).some((r) => r.path === "/app.js"));
-	assert.equal((await page.evaluate(() => window.scramjetCacheStats)).hit, 0);
-	await page.locator(".resource-cache summary").click();
-	await page
-		.getByRole("status")
-		.filter({ hasText: "本次已绕过缓存" })
-		.waitFor();
-	await page.reload();
-	await frame().locator("#ready").filter({ hasText: "Ready" }).waitFor();
-	await page.waitForFunction(() => window.scramjetCacheStats.hit >= 4);
+
 	const imported = await page.frames()[1].evaluate(async () => {
 		const module = await window.loadCachedModule();
 		return { value: module.value, source: module.source };
@@ -219,12 +197,12 @@ try {
 		"http://127.0.0.1:" + target.address().port + "/nested.js"
 	);
 
-	result.controls = [
-		"clear",
-		"disable persists across reload",
-		"enable",
-		"bypass one load",
-		"normal cache restored",
+	result.policy = [
+		"automatic warm reuse",
+		"live HTML and JSON",
+		"live cookie setters",
+		"304 validation",
+		"cached script module imports",
 	];
 	assert.deepEqual(errors, []);
 	assert.deepEqual(consoleErrors, []);

@@ -3,7 +3,7 @@ export const DEFAULT_GATEWAY_HOST = "my.xs2api.com";
 export const TARGET_QUERY = "__scramjet_url";
 export const HANDOFF_PATH = "/__scramjet_handoff";
 export const PROXY_RESOURCE_PATH =
-	/^(?:\/(?:scramjet|controller|src|assets|node_modules|@vite|@id|@fs|wisp)(?:\/|$)|\/(?:sw\.js|icon\.png|cache-runtime\.js|cache-settings\.js|__scramjet_handoff)$)/;
+	/^(?:\/(?:scramjet|controller|src|assets|node_modules|@vite|@id|@fs|wisp)(?:\/|$)|\/(?:sw\.js|icon\.png|__scramjet_handoff)$)/;
 
 export function normalizeProxyDomain(value: string): string {
 	const domain = value

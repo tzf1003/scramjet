@@ -91,13 +91,10 @@ the budget. Eviction removes stale entries first, then least recently used
 entries. Storage denial, quota exhaustion or other storage failures leave
 normal network loading available.
 
-Open the portal's resource-cache details or expand **资源缓存** on a proxy
-page to toggle caching, inspect byte/entry usage, clear the current origin,
-or choose **绕过缓存重新加载** for one load. Settings and clear operations
-apply to that browser origin; the portal and mapped subdomains have separate
-storage. Disabling caching also clears that origin's entries. Aggregate
-counters are available as `window.scramjetCacheStats` on proxy pages; cache
-diagnostics do not log target URLs or cookies.
+Caching runs automatically for eligible resources. Entries are local to each
+browser origin, so the portal and mapped subdomains have separate storage.
+Aggregate diagnostic counters are available as `window.scramjetCacheStats`
+on proxy pages; diagnostics do not log target URLs or cookies.
 
 Login and logout rotate the shared, Secure, nonsecret
 `__Secure-scramjet-cache-epoch` cookie. Another subdomain lazily deletes its
@@ -178,7 +175,7 @@ Runtime secrets remain in the server's mounted secret directory.
 
 The storage suite exercises Chromium, Firefox and WebKit. The proxy suite
 uses a local target, Wisp server and the real libcurl transport in Chromium;
-it checks warm-cache requests, revalidation and the cache controls. Reuse the
+it checks automatic warm-cache requests, revalidation and cached-script imports. Reuse the
 installed Playwright browsers and repository dependencies. Set
 `SCRAMJET_CACHE_OUTPUT=/path/to/project/cache-test-output` to place test
 evidence and Vite caches on the mounted external drive; the default is
@@ -191,6 +188,4 @@ resource-cache implementation has not been deployed to production.
 
 The libcurl transport patch in `patches/` adds HTTP 304 to its bodyless
 response statuses. Keep this patch applied through the frozen pnpm lockfile
-so validator responses reach the cache plugin successfully. After building,
-run `rtk env SCRAMJET_CACHE_FRONTEND=/path/to/frontend/dist node tests/cache/portal.browser.mjs`
-to verify the production cache runtime and portal controls.
+so validator responses reach the cache plugin successfully. Run `rtk node tests/cache/portal.browser.mjs` to verify portal navigation.

@@ -1,6 +1,5 @@
 import { viteStaticCopy } from "vite-plugin-static-copy";
 import { defineConfig, loadEnv } from "vite";
-import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import {
 	DEFAULT_PROXY_DOMAIN,
@@ -25,19 +24,6 @@ export default defineConfig(({ mode }) => {
 				env.SCRAMJET_DEMO_OUT_DIR ||
 				(externalBuild ? `${externalBuild}/dist` : "dist"),
 			emptyOutDir: true,
-			rollupOptions: {
-				input: {
-					main: resolve(import.meta.dirname, "index.html"),
-					"cache-runtime": resolve(import.meta.dirname, "src/cache-runtime.ts"),
-				},
-				preserveEntrySignatures: "strict",
-				output: {
-					entryFileNames: (chunk) =>
-						chunk.name === "cache-runtime"
-							? "cache-runtime.js"
-							: "assets/[name]-[hash].js",
-				},
-			},
 		},
 		server: {
 			host: "0.0.0.0",

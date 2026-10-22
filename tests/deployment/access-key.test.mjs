@@ -261,8 +261,6 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		"sw.js",
 		"version.json",
 		"source.tar.gz",
-		"cache-runtime.js",
-		"cache-settings.js",
 	])
 		await writeFile(path.join(directory, name), "release one");
 	const child = spawn(process.execPath, ["deployment/app.mjs"], {
@@ -454,8 +452,6 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 			"/sw.js",
 			"/version.json",
 			"/source.tar.gz",
-			"/cache-runtime.js",
-			"/cache-settings.js",
 			"/looks-like-static.js",
 			"/api/config",
 			"/api/session",
