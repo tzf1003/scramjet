@@ -72,9 +72,12 @@ export function proxyUrl(target: URL, entry: URL, proxyDomain: string): URL {
 	httpTarget(target.href);
 	const base = normalizeProxyDomain(proxyDomain);
 	const result = new URL(entry.origin);
-	const targetLabel = target.hostname.includes(":")
-		? ""
-		: flattenHostname(target.hostname);
+	let targetLabel = "";
+	try {
+		targetLabel = flattenHostname(target.hostname);
+	} catch {
+		// URL hosts outside DNS label syntax use the explicit target parameter.
+	}
 	if (
 		target.protocol === "https:" &&
 		!target.port &&

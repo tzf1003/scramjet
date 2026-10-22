@@ -143,3 +143,25 @@ test("oversized labels and Punycode-prefixed labels use the explicit target", ()
 		assert.equal(resolveTarget(url, base).href, target.href);
 	}
 });
+
+test("URL hosts outside DNS label syntax preserve explicit-target navigation", () => {
+	for (const hostname of [
+		"my_site.example",
+		"-site.example",
+		"site-.example",
+		`${"a".repeat(64)}.example`,
+	]) {
+		for (const scheme of ["https://", "http://"]) {
+			const target = new URL(`${scheme}${hostname}:9443/path?q=1#part`);
+			const standardPort = new URL(`${scheme}${hostname}/path?q=1#part`);
+			for (const url of [target, standardPort]) {
+				for (const route of [proxyUrl, shellUrl]) {
+					const result = route(url, entry, base);
+					assert.equal(result.origin, entry.origin);
+					assert.equal(result.searchParams.get(TARGET_QUERY), url.href);
+					assert.equal(resolveTarget(result, base).href, url.href);
+				}
+			}
+		}
+	}
+});
