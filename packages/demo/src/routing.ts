@@ -29,6 +29,24 @@ function httpTarget(value: string): URL {
 	return url;
 }
 
+/** Escape literal hyphens before flattening domain separators. */
+function flattenHostname(hostname: string): string {
+	return normalizeProxyDomain(hostname).replace(/-/g, "--").replace(/\./g, "-");
+}
+
+function expandHostname(label: string): string {
+	if (label.includes(".") || label.length > 63) {
+		throw new TypeError("Use one flattened target label under the proxy domain.");
+	}
+	const hostname = normalizeProxyDomain(
+		label.replace(/--|-/g, (separator) => (separator === "--" ? "-" : "."))
+	);
+	if (flattenHostname(hostname) !== label) {
+		throw new TypeError("Invalid flattened target hostname.");
+	}
+	return hostname;
+}
+
 /** Resolve a public entry URL while preserving the target's path, query and hash. */
 export function resolveTarget(entry: URL, proxyDomain: string): URL {
 	const base = normalizeProxyDomain(proxyDomain);
@@ -37,7 +55,7 @@ export function resolveTarget(entry: URL, proxyDomain: string): URL {
 	if (!hostname.endsWith(suffix)) {
 		throw new TypeError(`Open a target hostname under .${base}.`);
 	}
-	const targetHost = normalizeProxyDomain(hostname.slice(0, -suffix.length));
+	const targetHost = expandHostname(hostname.slice(0, -suffix.length));
 	const explicitTarget = entry.searchParams.get(TARGET_QUERY);
 	if (explicitTarget !== null) return httpTarget(explicitTarget);
 
@@ -54,15 +72,24 @@ export function proxyUrl(target: URL, entry: URL, proxyDomain: string): URL {
 	httpTarget(target.href);
 	const base = normalizeProxyDomain(proxyDomain);
 	const result = new URL(entry.origin);
+	let targetLabel = "";
+	try {
+		targetLabel = flattenHostname(target.hostname);
+	} catch {
+		// URL hosts outside DNS label syntax use the explicit target parameter.
+	}
 	if (
 		target.protocol === "https:" &&
 		!target.port &&
-		!target.hostname.includes(":") &&
+		targetLabel.length > 0 &&
+		targetLabel.length <= 63 &&
+		// Browsers interpret this prefix as Punycode rather than an encoded label.
+		!targetLabel.startsWith("xn--") &&
 		!PROXY_RESOURCE_PATH.test(target.pathname) &&
 		!target.searchParams.has(TARGET_QUERY) &&
-		`${target.hostname}.${base}`.length <= 253
+		`${targetLabel}.${base}`.length <= 253
 	) {
-		result.hostname = `${target.hostname}.${base}`;
+		result.hostname = `${targetLabel}.${base}`;
 		result.pathname = target.pathname;
 		result.search = target.search;
 		result.hash = target.hash;

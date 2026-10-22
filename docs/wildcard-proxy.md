@@ -1,8 +1,16 @@
 # 泛域名网页代理
 
-访问 `https://baidu.com.derp.xs2api.com:8443/test/`，页面自动加载
+访问 `https://baidu-com.derp.xs2api.com:8443/test/`，页面自动加载
 `https://baidu.com/test/`，仅展示全屏目标网页。路径、查询参数、锚点均保留。
 外部端口 `8443` 用于连接代理服务器，目标站默认使用 HTTPS 标准端口。
+
+目标域名的点编码为连字符，形成代理根域名下的一个标签。例如
+`a.b.c.example.com` 对应 `a-b-c-example-com.derp.xs2api.com`。
+目标域名原有的连字符编码为双连字符：`my-site.com` 对应
+`my--site-com.derp.xs2api.com`。国际化域名先使用 Punycode，再按同样规则编码；
+编码结果以浏览器保留的 `xn--` 开头时，生成的链接使用显式目标参数。
+入口解析和新标签页链接生成使用相同规则。旧的多级入口需改为扁平化格式；
+更换入口域名后，浏览器存储按新域名独立保存。
 
 ## 配置与运行
 
@@ -14,7 +22,7 @@ Wisp 默认连接当前域名、当前端口的 `/wisp/`，HTTPS 页面自动使
 ```sh
 # 本地开发，*.localhost 由浏览器解析到本机。
 VITE_PROXY_DOMAIN=localhost pnpm dev
-# 访问 http://example.com.localhost:4141/test/
+# 访问 http://example-com.localhost:4141/test/
 
 # 生产构建。
 VITE_PROXY_DOMAIN=derp.xs2api.com pnpm --dir packages/demo build
@@ -31,14 +39,12 @@ Service Worker 从根路径 `/sw.js` 注册，作用域为 `/`，支持深层路
 
 ## DNS 与 TLS
 
-将 `*.derp.xs2api.com` 的 DNS 记录指向代理入口，并确认 DNS 服务可解析
-`baidu.com.derp.xs2api.com` 和 `www.baidu.com.derp.xs2api.com` 等多层名称。
+将 `*.derp.xs2api.com` 的 DNS 记录指向代理入口，代理访问域名均位于该根域名下一级，
+例如 `baidu-com.derp.xs2api.com` 和 `www-baidu-com.derp.xs2api.com`。
 生产访问必须使用受浏览器信任的 HTTPS，以便启用 Service Worker。
 
-TLS 通配符只匹配一个标签：`*.derp.xs2api.com` **不能**覆盖
-`baidu.com.derp.xs2api.com`。需要为实际访问的完整主机名签发证书，或在受控客户端
-安装受信任的私有 CA 并按主机名签发证书。公开部署可为允许访问的目标主机预签发
-证书，并在入口按 SNI 选择证书。DNS 泛解析与证书覆盖范围需要分别配置。
+配置 `*.derp.xs2api.com` 的 TLS 通配符证书即可覆盖这些扁平化入口。
+如需通过 HTTPS 访问根域名 `derp.xs2api.com` 本身，证书还需包含该名称。
 
 ## 反向代理
 
@@ -92,11 +98,13 @@ server {
 刷新可恢复当前页面。例如：
 
 ```text
-https://baidu.com.derp.xs2api.com:8443/?__scramjet_url=https%3A%2F%2Faccounts.example.com%2Flogin
+https://baidu-com.derp.xs2api.com:8443/?__scramjet_url=https%3A%2F%2Faccounts.example.com%2Flogin
 ```
 
 新标签页中的标准 HTTPS 链接使用对应的目标泛域名。HTTP、IPv6、非标准目标端口
 和含保留参数 `__scramjet_url` 的目标地址使用显式目标参数，以保留原始 URL。
+扁平化后超过 DNS 单标签 63 字符限制或完整域名长度限制的目标也使用该参数，
+入口保留当前有效的代理域名。
 该参数只接受 HTTP(S) 绝对地址，且拒绝 URL 内嵌用户名和密码。
 各代理域名的浏览器存储独立，新标签页切换代理域名时登录状态不共享。
 

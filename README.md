@@ -60,17 +60,23 @@ the rewriter). It opens the target website from the request hostname in a
 full-screen frame. For example:
 
 ```text
-https://baidu.com.derp.xs2api.com:8443/test/?q=hello#section
+https://baidu-com.derp.xs2api.com:8443/test/?q=hello#section
 → https://baidu.com/test/?q=hello#section
 ```
 
 The proxy port belongs to the proxy endpoint; targets default to HTTPS on their
 standard port. Configure the base hostname with `VITE_PROXY_DOMAIN` (default:
-`derp.xs2api.com`). For local development:
+`derp.xs2api.com`). Target dots become hyphens and literal hyphens become double
+hyphens: `my-site.com` uses `my--site-com.derp.xs2api.com`. Each entry occupies
+one subdomain label, covered by `*.derp.xs2api.com`. Generated links use the
+explicit target parameter when the encoded label exceeds 63 characters or
+starts with the browser-reserved `xn--` prefix.
+Existing multi-level entry URLs should be updated to this flattened format.
+For local development:
 
 ```sh
 VITE_PROXY_DOMAIN=localhost pnpm dev
-# Open http://example.com.localhost:4141/
+# Open http://example-com.localhost:4141/
 ```
 
 See [wildcard proxy deployment](docs/wildcard-proxy.md) for DNS, certificates,
