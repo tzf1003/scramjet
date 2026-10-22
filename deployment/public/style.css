@@ -181,3 +181,22 @@ footer {
 		gap: 10px;
 	}
 }
+#cache-settings {
+	margin-top: 20px;
+	border-top: 1px solid #e2e8f0;
+	padding-top: 16px;
+	font-size: 14px;
+}
+#cache-settings summary {
+	cursor: pointer;
+}
+#cache-settings .cache-toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 16px;
+}
+#cache-settings input[type="checkbox"] {
+	width: auto;
+	margin: 0;
+}

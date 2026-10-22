@@ -7,6 +7,7 @@
 		<link rel="stylesheet" href="/style.css" />
 		<script type="module" src="/home.js"></script>
 		<script type="module" src="/access-session.js"></script>
+		<script type="module" src="/cache-settings.js"></script>
 	</head>
 	<body class="login">
 		<form id="open">
@@ -22,6 +23,24 @@
 				required
 			/><button type="submit">打开网页</button>
 			<p id="message" role="status"></p>
+			<details id="cache-settings">
+				<summary>资源缓存</summary>
+				<label class="cache-toggle"
+					><input
+						id="cache-enabled"
+						type="checkbox"
+						disabled
+					/>启用资源缓存</label
+				>
+				<p id="cache-usage" role="status">正在读取缓存用量…</p>
+				<button id="cache-clear" type="button" disabled>
+					清理当前站点缓存
+				</button>
+				<button id="cache-bypass" type="submit">本次绕过缓存打开</button>
+				<p>
+					设置和用量属于当前站点。打开代理网页后，也可在“资源缓存”中管理该站点的缓存。
+				</p>
+			</details>
 			<p>
 				<a href="/source.tar.gz">项目源码</a> ·
 				<a href="/version.json">版本信息</a> ·

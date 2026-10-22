@@ -1,3 +1,4 @@
+import { proxyResourceCache } from "./cache";
 import { loadEnvironment } from "./environment";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import {
@@ -142,15 +143,16 @@ async function main() {
 	};
 	const syncSurface = syncShellSurface(iframe);
 	const watcher = new ManagedPlugin("demo-navigation", []);
+	let currentTarget = target;
 	const frame = controller.createFrame(iframe, {
 		plugins: [
 			watcher,
+			proxyResourceCache(() => currentTarget.origin),
 			new CatchEscapedLinksPlugin((url) =>
 				gatewayEntry ? shellUrl(url, entry, base) : proxyUrl(url, entry, base)
 			),
 		],
 	});
-	let currentTarget = target;
 	let navigation = 0;
 	let handoffAbort: AbortController | undefined;
 	watcher.tap(

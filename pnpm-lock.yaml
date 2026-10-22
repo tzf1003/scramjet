@@ -23,6 +23,9 @@ overrides:
   htmlparser2: 12.0.0
 
 patchedDependencies:
+  '@mercuryworkshop/libcurl-transport@2.0.5':
+    hash: be0dd135a6e4f16c24643d640e3f93d4aeb2925faa531b72e8f18b57befef572
+    path: patches/@mercuryworkshop__libcurl-transport@2.0.5.patch
   htmlparser2@12.0.0:
     hash: 741b06dbf8a09e52a2116a4a219a8625dbebe8d75d37e1210314f06aa952ce9b
     path: patches/htmlparser2@12.0.0.patch
@@ -95,7 +98,7 @@ importers:
         version: 3.0.1
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
-        version: 2.0.5
+        version: 2.0.5(patch_hash=be0dd135a6e4f16c24643d640e3f93d4aeb2925faa531b72e8f18b57befef572)
       '@mercuryworkshop/proxy-transports':
         specifier: 'catalog:'
         version: 1.0.2
@@ -224,7 +227,7 @@ importers:
     dependencies:
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
-        version: 2.0.5
+        version: 2.0.5(patch_hash=be0dd135a6e4f16c24643d640e3f93d4aeb2925faa531b72e8f18b57befef572)
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
         version: link:../core
@@ -251,7 +254,7 @@ importers:
     dependencies:
       '@mercuryworkshop/libcurl-transport':
         specifier: 'catalog:'
-        version: 2.0.5
+        version: 2.0.5(patch_hash=be0dd135a6e4f16c24643d640e3f93d4aeb2925faa531b72e8f18b57befef572)
       '@mercuryworkshop/scramjet':
         specifier: workspace:*
         version: link:../core
@@ -3714,7 +3717,7 @@ snapshots:
     dependencies:
       '@mercuryworkshop/epoxy-tls': 2.1.19-1
 
-  '@mercuryworkshop/libcurl-transport@2.0.5':
+  '@mercuryworkshop/libcurl-transport@2.0.5(patch_hash=be0dd135a6e4f16c24643d640e3f93d4aeb2925faa531b72e8f18b57befef572)':
     dependencies:
       libcurl.js: 0.7.4
 

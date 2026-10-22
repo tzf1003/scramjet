@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream, readFileSync } from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { server as wisp, logging } from "@mercuryworkshop/wisp-js/server";
 import ipaddr from "ipaddr.js";
 import {
@@ -67,6 +68,29 @@ const root = path.resolve(env.PUBLIC_ROOT || "public");
 const attempts = new Map();
 const peers = new Map();
 const now = () => Math.floor(Date.now() / 1000);
+// These routes are public before authentication and never issue credentials.
+const publicAssets = new Set([
+	"/login.js",
+	"/access-key-client.js",
+	"/access-session.js",
+	"/style.css",
+]);
+function assetCacheControl(name) {
+	if (publicAssets.has(name)) return "public, max-age=300, must-revalidate";
+	if (
+		/^\/(?:scramjet|controller|assets)\//.test(name) &&
+		/\.(?:js|mjs|css|wasm|png|svg|jpg|jpeg|gif|webp|ico|woff2?|ttf|otf)$/.test(
+			name
+		)
+	) {
+		// Vite's content-addressed files can be reused without a round trip.
+		if (/^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[^/.]+$/.test(name))
+			return "private, max-age=31536000, immutable";
+		return "private, no-cache";
+	}
+	if (["/home.js", "/icon.png"].includes(name)) return "private, no-cache";
+	return "no-store";
+}
 function json(res, code, value) {
 	res.writeHead(code, {
 		"content-type": "application/json; charset=utf-8",
@@ -75,7 +99,7 @@ function json(res, code, value) {
 	res.end(JSON.stringify(value));
 }
 const ip = createClientIp(env.TRUSTED_PROXY_CIDRS);
-async function serve(res, name) {
+async function serve(req, res, name) {
 	const file = path.resolve(root, "." + name);
 	if (!file.startsWith(root + path.sep))
 		return json(res, 404, { error: "not found" });
@@ -92,11 +116,44 @@ async function serve(res, name) {
 		".gz": "application/gzip",
 		".txt": "text/plain; charset=utf-8",
 	};
-	res.writeHead(200, {
+	const cacheControl = assetCacheControl(name);
+	const headers = {
 		"content-type": mime[path.extname(file)] || "application/octet-stream",
-		"cache-control": "no-store",
+		"cache-control": cacheControl,
 		"content-length": metadata.size,
-	});
+	};
+	if (cacheControl !== "no-store") {
+		// Authentication already ran for private files. Cache only file bytes;
+		// HTML and API requests continue renewing the access cookie.
+		res.removeHeader("set-cookie");
+		if (cacheControl.startsWith("private")) headers.vary = "Cookie";
+		const identity = [
+			env.SOURCE_COMMIT,
+			name,
+			metadata.size,
+			metadata.mtimeMs,
+			metadata.ctimeMs,
+		];
+		const etag = `W/"${createHash("sha256").update(JSON.stringify(identity)).digest("hex")}"`;
+		headers.etag = etag;
+		const tags = req.headers["if-none-match"];
+		if (
+			(req.method === "GET" || req.method === "HEAD") &&
+			tags
+				?.split(",")
+				.some(
+					(tag) =>
+						tag.trim() === "*" ||
+						tag.trim().replace(/^W\//, "") === etag.slice(2)
+				)
+		) {
+			delete headers["content-length"];
+			res.writeHead(304, headers);
+			return res.end();
+		}
+	}
+	res.writeHead(200, headers);
+	if (req.method === "HEAD") return res.end();
 	createReadStream(file).pipe(res);
 }
 Object.assign(wisp.options, {
@@ -154,6 +211,7 @@ const server = http.createServer(async (req, res) => {
 			attempts.delete(key);
 			res.setHeader("set-cookie", [
 				...access.cookie(),
+				access.cacheEpochCookie(),
 				`${LEGACY_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0`,
 			]);
 			return json(res, 200, { ok: true, expiresAt: null });
@@ -161,19 +219,16 @@ const server = http.createServer(async (req, res) => {
 		const pathname = new URL(req.url, origin).pathname;
 		if (
 			(req.method === "GET" || req.method === "HEAD") &&
-			[
-				"/login",
-				"/login.js",
-				"/access-key-client.js",
-				"/access-session.js",
-				"/style.css",
-			].includes(pathname)
+			(pathname === "/login" || publicAssets.has(pathname))
 		)
-			return serve(res, pathname === "/login" ? "/login.html" : pathname);
+			return serve(req, res, pathname === "/login" ? "/login.html" : pathname);
 		if (req.method === "POST" && req.url === "/api/logout") {
 			if (req.headers.origin !== origin)
 				return json(res, 403, { error: "origin denied" });
-			res.setHeader("set-cookie", access.clearCookies());
+			res.setHeader("set-cookie", [
+				...access.clearCookies(),
+				access.cacheEpochCookie(),
+			]);
 			// "cookies" would also drop the shared logout marker set above.
 			res.setHeader(
 				"clear-site-data",
@@ -221,7 +276,7 @@ const server = http.createServer(async (req, res) => {
 			credentialServer.emit("request", req, res);
 			return;
 		}
-		if (req.method !== "GET")
+		if (req.method !== "GET" && req.method !== "HEAD")
 			return json(res, 405, { error: "method not allowed" });
 		const url = new URL(req.url, origin);
 		const name = decodeURIComponent(url.pathname);
@@ -235,10 +290,13 @@ const server = http.createServer(async (req, res) => {
 				"/version.json",
 				"/source.tar.gz",
 				"/home.js",
+				"/cache-runtime.js",
+				"/cache-settings.js",
 			].includes(name)
 		)
-			return await serve(res, "/home.html");
-		if (name === "/home.js") return await serve(res, name);
+			return await serve(req, res, "/home.html");
+		if (["/home.js", "/cache-runtime.js", "/cache-settings.js"].includes(name))
+			return await serve(req, res, name);
 		if (
 			name === "/source.tar.gz" ||
 			name === "/version.json" ||
@@ -246,8 +304,8 @@ const server = http.createServer(async (req, res) => {
 			name === "/sw.js" ||
 			/^\/(?:scramjet|controller|assets)\//.test(name)
 		)
-			return await serve(res, name);
-		return await serve(res, "/index.html");
+			return await serve(req, res, name);
+		return await serve(req, res, "/index.html");
 	} catch (err) {
 		console.error("Request failed:", err.code || err.name);
 		if (!res.headersSent) json(res, 500, { error: "server error" });

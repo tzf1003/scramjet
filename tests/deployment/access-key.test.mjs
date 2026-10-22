@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -153,7 +153,9 @@ test("a domain-scoped cookie is shared across subdomains and still honours host-
 		false
 	);
 	assert.ok(
-		access.clearCookies().some((value) => /^__Secure-.*Domain=proxy\.test/.test(value))
+		access
+			.clearCookies()
+			.some((value) => /^__Secure-.*Domain=proxy\.test/.test(value))
 	);
 	assert.equal(
 		createAccessControl(key)
@@ -242,6 +244,27 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 	await writeFile(path.join(directory, "key"), key, { mode: 0o600 });
 	await writeFile(path.join(directory, "home.html"), "gateway home");
 	await writeFile(path.join(directory, "index.html"), "target shell");
+	await writeFile(path.join(directory, "login.html"), "login page");
+	for (const name of [
+		"login.js",
+		"access-key-client.js",
+		"access-session.js",
+		"style.css",
+	])
+		await writeFile(path.join(directory, name), "public asset");
+	for (const name of ["scramjet", "controller", "assets"])
+		await mkdir(path.join(directory, name));
+	for (const name of [
+		"scramjet/wasm.wasm",
+		"controller/controller.js",
+		"assets/index-aB1_cD23.js",
+		"sw.js",
+		"version.json",
+		"source.tar.gz",
+		"cache-runtime.js",
+		"cache-settings.js",
+	])
+		await writeFile(path.join(directory, name), "release one");
 	const child = spawn(process.execPath, ["deployment/app.mjs"], {
 		cwd: new URL("../..", import.meta.url),
 		env: {
@@ -302,10 +325,15 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 								if (item) headers.append(name, item);
 						}
 						resolve(
-							new Response(Buffer.concat(chunks), {
-								status: response.statusCode,
-								headers,
-							})
+							new Response(
+								response.statusCode === 304 || options.method === "HEAD"
+									? null
+									: Buffer.concat(chunks),
+								{
+									status: response.statusCode,
+									headers,
+								}
+							)
 						);
 					});
 				}
@@ -343,6 +371,120 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		.find((value) => value.startsWith(ACCESS_COOKIE + "="))
 		.split(";")[0];
 	assert.equal(decodeURIComponent(cookie.slice(ACCESS_COOKIE.length + 1)), key);
+	const loginEpoch = success.headers
+		.getSetCookie()
+		.find((value) => value.startsWith("__Secure-scramjet-cache-epoch="));
+	assert.match(
+		loginEpoch,
+		/; Secure; SameSite=Strict; Domain=proxy\.test; Max-Age=/
+	);
+	assert.ok(!loginEpoch.includes("HttpOnly"));
+	for (const host of [
+		"proxy.test",
+		"my.proxy.test",
+		"example-com.proxy.test",
+	]) {
+		for (const route of [
+			"/login.js",
+			"/access-key-client.js",
+			"/access-session.js",
+			"/style.css",
+		]) {
+			const asset = await call(route, { headers: { host, cookie } });
+			assert.equal(asset.status, 200);
+			assert.equal(
+				asset.headers.get("cache-control"),
+				"public, max-age=300, must-revalidate"
+			);
+			assert.equal(asset.headers.get("set-cookie"), null);
+			assert.equal(await asset.text(), "public asset");
+			const anonymous = await call(route, { headers: { host } });
+			assert.equal(anonymous.status, 200);
+			const etag = asset.headers.get("etag");
+			assert.ok(etag);
+			const revalidated = await call(route, {
+				headers: { host, "if-none-match": `"old", ${etag.slice(2)}` },
+			});
+			assert.equal(revalidated.status, 304);
+			assert.equal(await revalidated.text(), "");
+			assert.equal(revalidated.headers.get("set-cookie"), null);
+		}
+		for (const route of [
+			"/scramjet/wasm.wasm",
+			"/controller/controller.js",
+			"/assets/index-aB1_cD23.js",
+		]) {
+			const asset = await call(route, { headers: { host, cookie } });
+			assert.equal(asset.status, 200);
+			assert.match(asset.headers.get("cache-control"), /^private, /);
+			assert.equal(
+				asset.headers.get("cache-control").includes("immutable"),
+				route.startsWith("/assets/")
+			);
+			assert.equal(asset.headers.get("vary"), "Cookie");
+			assert.equal(asset.headers.get("set-cookie"), null);
+			const etag = asset.headers.get("etag");
+			assert.ok(etag);
+			assert.equal(
+				(
+					await call(route, {
+						headers: { host, cookie, "if-none-match": etag },
+					})
+				).status,
+				304
+			);
+			for (const invalidCookie of ["", `${ACCESS_COOKIE}=wrong`]) {
+				const denied = await call(route, {
+					headers: { host, cookie: invalidCookie, "if-none-match": etag },
+				});
+				assert.equal(denied.status, 302);
+				assert.equal(denied.headers.get("cache-control"), "no-store");
+			}
+			const head = await call(route, {
+				method: "HEAD",
+				headers: { host, cookie },
+			});
+			assert.equal(head.status, 200);
+			assert.equal(head.headers.get("content-length"), "11");
+			assert.equal(await head.text(), "");
+		}
+		for (const route of [
+			"/",
+			"/login",
+			"/sw.js",
+			"/version.json",
+			"/source.tar.gz",
+			"/cache-runtime.js",
+			"/cache-settings.js",
+			"/looks-like-static.js",
+			"/api/config",
+			"/api/session",
+			"/turn-credentials",
+		]) {
+			const response = await call(route, {
+				headers: { host, cookie, "if-none-match": "*" },
+			});
+			assert.equal(response.status, 200);
+			assert.equal(response.headers.get("cache-control"), "no-store");
+			assert.equal(response.headers.get("etag"), null);
+		}
+	}
+	const before = await call("/controller/controller.js", {
+		headers: { cookie },
+	});
+	await writeFile(
+		path.join(directory, "controller/controller.js"),
+		"release two"
+	);
+	const changed = await call("/controller/controller.js", {
+		headers: { cookie, "if-none-match": before.headers.get("etag") },
+	});
+	assert.equal(changed.status, 200);
+	assert.equal(await changed.text(), "release two");
+	assert.notEqual(changed.headers.get("etag"), before.headers.get("etag"));
+	const missing = await call("/assets/missing.js", { headers: { cookie } });
+	assert.equal(missing.status, 404);
+	assert.equal(missing.headers.get("cache-control"), "no-store");
 	const session = await call("/api/session", { headers: { cookie } });
 	assert.equal(session.status, 200);
 	assert.equal((await session.json()).expiresAt, null);
@@ -536,10 +678,16 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 			.getSetCookie()
 			.every(
 				(value) =>
-					value.includes("Max-Age=0") || value.startsWith(LOGOUT_COOKIE + "=1")
+					value.includes("Max-Age=0") ||
+					value.startsWith(LOGOUT_COOKIE + "=1") ||
+					value.startsWith("__Secure-scramjet-cache-epoch=")
 			)
 	);
 	assert.match(logout.headers.get("clear-site-data"), /storage/);
+	const logoutEpoch = logout.headers
+		.getSetCookie()
+		.find((value) => value.startsWith("__Secure-scramjet-cache-epoch="));
+	assert.notEqual(logoutEpoch.split(";")[0], loginEpoch.split(";")[0]);
 	assert.doesNotMatch(logout.headers.get("clear-site-data"), /cookies/);
 	assert.equal((await call("/api/session")).status, 401);
 	const storage = memoryStorage();

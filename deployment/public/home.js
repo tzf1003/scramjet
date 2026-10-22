@@ -1,6 +1,8 @@
 document.querySelector("#open").addEventListener("submit", (event) => {
 	event.preventDefault();
 	try {
+		if (event.submitter?.id === "cache-bypass")
+			sessionStorage.setItem("__scramjet_cache_bypass", "1");
 		let input = document.querySelector("#url").value.trim();
 		if (!/^[a-z][a-z0-9+.-]*:/i.test(input)) input = "https://" + input;
 		const target = new URL(input);
@@ -26,6 +28,7 @@ document.querySelector("#logout").addEventListener("click", async () => {
 		});
 		if (!response.ok) throw new Error("退出失败，请重试");
 		browserKeyClient().forget();
+		document.dispatchEvent(new Event("scramjet-cache-revoke"));
 		location.replace("/login");
 	} catch (error) {
 		message.textContent = error.message;

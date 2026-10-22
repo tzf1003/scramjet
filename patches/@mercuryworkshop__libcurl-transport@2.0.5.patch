@@ -1,0 +1,26 @@
+diff --git a/dist/index.js b/dist/index.js
+index f4771787888d9aca38844863b7510f4c5bd30b8d..9493c042e9099460342a04a382fa97c4881ff019
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -5875,7 +5875,7 @@ Several C libraries are used, and their licenses are listed below:
+     static create_response(response_data, response_info) {
+       response_info.ok = response_info.status >= 200 && response_info.status < 300;
+       response_info.statusText = status_messages[response_info.status] || "";
+-      if (response_info.status === 204 || response_info.status === 205) {
++      if (response_info.status === 204 || response_info.status === 205 || response_info.status === 304) {
+         response_data = null;
+       }
+       let response_obj = new Response(response_data, response_info);
+diff --git a/dist/index.mjs b/dist/index.mjs
+index 159349224e630d97e32d3b6a095211484b772090..f3000f61a5137c98af476f4d44ab809a45495e6a
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -5854,7 +5854,7 @@ Several C libraries are used, and their licenses are listed below:
+     static create_response(response_data, response_info) {
+       response_info.ok = response_info.status >= 200 && response_info.status < 300;
+       response_info.statusText = status_messages[response_info.status] || "";
+-      if (response_info.status === 204 || response_info.status === 205) {
++      if (response_info.status === 204 || response_info.status === 205 || response_info.status === 304) {
+         response_data = null;
+       }
+       let response_obj = new Response(response_data, response_info);
