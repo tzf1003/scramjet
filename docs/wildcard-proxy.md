@@ -83,6 +83,8 @@ server {
     location ^~ /controller/ { try_files $uri =404; }
     location ^~ /assets/ { try_files $uri =404; }
 
+    location = /__scramjet_handoff { try_files /handoff.html =404; }
+
     location / {
         # HTML 文档路径（包括 /test.html）统一从代理入口启动。
         try_files /index.html =404;
@@ -115,13 +117,16 @@ https://example-com-9443.derp.xs2api.com:8443/test/
 切换域名前，代理通过目标域名下的隐藏入口交接当前标签页的导航状态；仅传递
 同时适用于来源和目标域名的 Cookie，保留 HttpOnly 等属性，并合入目标控制器的
 持久化存储。目标入口已有的其他 Cookie 保持其作用域。
-交接消息核验窗口、代理域名、协议、代理端口和随机令牌。状态有效期为 30 秒，
+交接消息核验窗口、代理域名、协议、代理端口和随机令牌。状态有效期为 120 秒，
 消费后删除；Cookie 不进入地址栏。Cookie 作用域通过公共后缀列表校验，包含
 私有后缀（如 `github.io`）。首个请求的来源、Referer 和 SameSite 上下文按
 发送方实际代理域名校验；跨站交接即使隐藏 Referer 也会执行跨站 Cookie 限制。
 `localStorage`、IndexedDB 等网页存储仍按代理域名独立，交接不提供跨标签页的
 持续 Cookie 同步。目标服务器应允许同一代理根域名下的入口相互嵌入，
-并将 `GET /__scramjet_handoff` 回退到同一个 `index.html`。
+并将 `GET /__scramjet_handoff` 指向构建产物中的 `handoff.html`。该页面只包含交接逻辑，
+不加载代理运行文件，首次访问新代理域名也能快速应答；仍回退到 `index.html` 的旧配置
+同样可用，但需要先下载完整的代理运行文件。交接最长等待 60 秒；隐藏入口加载完成后
+2 秒内未应答（如错误页或登录跳转）即视为失败。
 
 跨站 POST 表单继续保留原控制器和请求体，地址栏以 `__scramjet_url` 参数记录
 目标。HTTP、IP 地址、保留资源路径、含保留参数的目标地址，以及超长或无法编码的

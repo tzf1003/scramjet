@@ -294,6 +294,9 @@ const server = http.createServer(async (req, res) => {
 		)
 			return await serve(req, res, "/home.html");
 		if (name === "/home.js") return await serve(req, res, name);
+		// The handoff bridge only relays navigation state; skip the full shell.
+		if (name === "/__scramjet_handoff")
+			return await serve(req, res, "/handoff.html");
 		if (
 			name === "/source.tar.gz" ||
 			name === "/version.json" ||

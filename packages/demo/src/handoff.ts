@@ -3,7 +3,11 @@ import { getDomain } from "tldts";
 
 const STORAGE_KEY = "__scramjet_navigation";
 const MESSAGE = "scramjet-navigation";
-const MAX_AGE = 30_000;
+// Slow links can spend most of a minute on the bridge before the destination
+// shell loads, so the one-use state outlives the handoff timeout.
+const MAX_AGE = 120_000;
+const HANDOFF_TIMEOUT = 60_000;
+const UNANSWERED_TIMEOUT = 2_000;
 const MAX_BYTES = 512_000;
 
 type Cookie = {
@@ -271,10 +275,12 @@ export function prepareHandoff(
 		iframe.setAttribute("aria-hidden", "true");
 		iframe.referrerPolicy = "no-referrer";
 		let finished = false;
+		let unanswered: ReturnType<typeof setTimeout> | undefined;
 		const finish = (success: boolean) => {
 			if (finished) return;
 			finished = true;
 			clearTimeout(timeout);
+			clearTimeout(unanswered);
 			clearInterval(probe);
 			window.removeEventListener("message", receive);
 			signal?.removeEventListener("abort", abort);
@@ -291,8 +297,15 @@ export function prepareHandoff(
 			)
 				return;
 			if (event.data.action === "ready") {
+				clearTimeout(unanswered);
+				// Stamp on delivery: the bridge may have taken most of the timeout.
 				iframe.contentWindow?.postMessage(
-					{ type: MESSAGE, token, action: "store", state },
+					{
+						type: MESSAGE,
+						token,
+						action: "store",
+						state: { ...state, createdAt: Date.now() },
+					},
 					destination.origin
 				);
 			} else if (event.data.action === "stored") finish(true);
@@ -306,7 +319,7 @@ export function prepareHandoff(
 				),
 			100
 		);
-		const timeout = setTimeout(() => finish(false), 5_000);
+		const timeout = setTimeout(() => finish(false), HANDOFF_TIMEOUT);
 		window.addEventListener("message", receive);
 		signal?.addEventListener("abort", abort, { once: true });
 		if (signal?.aborted) {
@@ -314,6 +327,15 @@ export function prepareHandoff(
 			return;
 		}
 		iframe.addEventListener("error", () => finish(false), { once: true });
+		// The long timeout only covers a slow bridge download. A loaded bridge has
+		// already run its receiver, so a page that stays silent (an error page, a
+		// login redirect) fails quickly instead.
+		iframe.addEventListener("load", () => {
+			// The initial about:blank is same-origin; the bridge never is.
+			if (iframe.contentDocument) return;
+			clearTimeout(unanswered);
+			unanswered = setTimeout(() => finish(false), UNANSWERED_TIMEOUT);
+		});
 		iframe.src = bridge.href;
 		document.body.append(iframe);
 	});

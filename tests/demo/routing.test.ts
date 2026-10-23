@@ -314,8 +314,8 @@ test("handoff state is scoped to one target, expires and is consumed once", () =
 		);
 		for (const patch of [
 			{ target: "https://baidu.com/other" },
-			{ createdAt: Date.now() - 31_000 },
-			{ createdAt: Date.now() + 31_000 },
+			{ createdAt: Date.now() - 121_000 },
+			{ createdAt: Date.now() + 121_000 },
 			{ cookies: '{"invalid":{"domain":".evil.example"}}' },
 			{ initiator: "ftp://example.com" },
 		]) {
