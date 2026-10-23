@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 import { existsSync } from "node:fs";
 import {
 	DEFAULT_PROXY_DOMAIN,
+	HANDOFF_PATH,
 	normalizeProxyDomain,
 	PROXY_RESOURCE_PATH,
 } from "./src/routing.ts";
@@ -24,6 +25,12 @@ export default defineConfig(({ mode }) => {
 				env.SCRAMJET_DEMO_OUT_DIR ||
 				(externalBuild ? `${externalBuild}/dist` : "dist"),
 			emptyOutDir: true,
+			rollupOptions: {
+				input: {
+					index: "index.html",
+					handoff: "handoff.html",
+				},
+			},
 		},
 		server: {
 			host: "0.0.0.0",
@@ -42,7 +49,10 @@ export default defineConfig(({ mode }) => {
 					server.middlewares.use((req, _res, next) => {
 						const pathname = new URL(req.url || "/", "http://localhost")
 							.pathname;
-						if (
+						if (pathname === HANDOFF_PATH) {
+							// The bridge page skips the proxy runtime the shell loads.
+							req.url = "/handoff.html";
+						} else if (
 							(req.method === "GET" || req.method === "HEAD") &&
 							req.headers.accept?.includes("text/html") &&
 							!PROXY_RESOURCE_PATH.test(pathname)

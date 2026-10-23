@@ -244,6 +244,7 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 	await writeFile(path.join(directory, "key"), key, { mode: 0o600 });
 	await writeFile(path.join(directory, "home.html"), "gateway home");
 	await writeFile(path.join(directory, "index.html"), "target shell");
+	await writeFile(path.join(directory, "handoff.html"), "handoff bridge");
 	await writeFile(path.join(directory, "login.html"), "login page");
 	for (const name of [
 		"login.js",
@@ -526,6 +527,12 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 		assert.equal(
 			await (await call("/path?q=1", { headers: { cookie, host } })).text(),
 			"target shell"
+		);
+		assert.equal(
+			await (
+				await call("/__scramjet_handoff?token=0", { headers: { cookie, host } })
+			).text(),
+			"handoff bridge"
 		);
 		assert.equal(
 			(
