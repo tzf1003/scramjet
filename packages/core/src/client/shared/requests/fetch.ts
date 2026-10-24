@@ -84,10 +84,13 @@ export default function (client: ScramjetClient) {
 						// built here so invalid headers reject the promise like native fetch
 						const headers = new NativeHeaders(options.headers as HeadersInit);
 						const serialized = new NativeResponse(form);
-						headers.set(
-							"content-type",
-							serialized.headers.get("content-type") as string
-						);
+						// an explicit Content-Type wins, as it does for a native FormData body
+						if (!headers.has("content-type")) {
+							headers.set(
+								"content-type",
+								serialized.headers.get("content-type") as string
+							);
+						}
 						options.body = await serialized.arrayBuffer();
 						options.headers = headers;
 						ctx.args[1] = options;
