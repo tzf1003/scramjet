@@ -28,6 +28,28 @@ TURN credentials retain their short lifetime and automatic refresh. After
 access-key validation the gateway supplies a short-lived internal credential
 session to the existing issuer. The access key is not returned by its APIs.
 
+## Gateway headers for the navigation handoff
+
+The nginx gateway sends `Cross-Origin-Embedder-Policy: require-corp` on every
+response. Cross-site navigation first loads `/__scramjet_handoff` on the
+destination host in a hidden iframe embedded by the source host, so that path
+must send `Cross-Origin-Resource-Policy: same-site`. With `same-origin` Chrome
+blocks the frame (`net::ERR_BLOCKED_BY_RESPONSE`), the handoff fails and every
+cross-site jump falls back to `?__scramjet_url=` on the source host. Keep every
+other path on `same-origin`:
+
+```nginx
+map $uri $corp { default same-origin; /__scramjet_handoff same-site; }
+# in the server block, replacing the fixed value:
+add_header Cross-Origin-Resource-Policy $corp always;
+```
+
+The gateway container bind-mounts `nginx.conf`, and Docker resolves a `current`
+symlink when the container is created, so recreate it after switching releases
+(`manage.sh up -d --no-deps gateway`) instead of only restarting it. Check with
+`curl -skI` on `/__scramjet_handoff` and `/login` that the two paths return
+`same-site` and `same-origin`.
+
 ## HTTP caching
 
 The gateway caches file responses according to their resolved file, so a target
