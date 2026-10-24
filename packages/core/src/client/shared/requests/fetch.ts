@@ -1,4 +1,4 @@
-import { NativeHeaders, NativeObject, NativeResponse } from "@/shared/snapshot";
+import { NativeHeaders, NativeResponse } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./xmlhttprequest";
 import { String } from "@/shared/snapshot";
@@ -21,6 +21,23 @@ function rewriteUrlOptionsForFetch(init: RequestInit | undefined) {
 
 // Uploads larger than this keep streaming rather than being read into memory.
 const MAX_FLATTENED_BODY = 64 * 1024 * 1024;
+
+const REQUEST_INIT_KEYS = [
+	"method",
+	"headers",
+	"body",
+	"referrer",
+	"referrerPolicy",
+	"mode",
+	"credentials",
+	"cache",
+	"redirect",
+	"integrity",
+	"keepalive",
+	"signal",
+	"priority",
+	"duplex",
+];
 
 export default function (client: ScramjetClient) {
 	/**
@@ -49,22 +66,24 @@ export default function (client: ScramjetClient) {
 			ctx.args[0] = client.rewriteUrl(url, rewriteUrlOptionsForFetch(init));
 
 			if (init && hasFiles(init.body)) {
+				// fetch reads its options when it is called, so take them now, before
+				// the body is serialized and the caller can change them.
+				const options: Record<string, unknown> = {};
+				for (const key of REQUEST_INIT_KEYS) {
+					if (key in init) options[key] = init[key as keyof RequestInit];
+				}
+				const form = options.body as FormData;
+				const headers = new NativeHeaders(options.headers as HeadersInit);
 				ctx.return(
 					(async () => {
-						const serialized = new NativeResponse(init.body as FormData);
-						const headers = new NativeHeaders(init.headers);
+						const serialized = new NativeResponse(form);
 						headers.set(
 							"content-type",
 							serialized.headers.get("content-type") as string
 						);
-						// Inherit from init so options it inherits or defines as getters
-						// (method, signal, ...) are still read by fetch.
-						const next = NativeObject.create(init);
-						NativeObject.defineProperties(next, {
-							body: { value: await serialized.arrayBuffer() },
-							headers: { value: headers },
-						});
-						ctx.args[1] = next;
+						options.body = await serialized.arrayBuffer();
+						options.headers = headers;
+						ctx.args[1] = options;
 						return ctx.call();
 					})()
 				);
