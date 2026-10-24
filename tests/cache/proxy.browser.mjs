@@ -4,7 +4,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createServer } from "vite";
 import { server as wisp, logging } from "@mercuryworkshop/wisp-js/server";
-import { chromium } from "../../packages/runway/node_modules/playwright/index.mjs";
+import {
+	chromium,
+	firefox,
+	webkit,
+} from "../../packages/runway/node_modules/playwright/index.mjs";
+const engineName = process.env.SCRAMJET_TEST_BROWSER || "chromium";
+const engine = { chromium, firefox, webkit }[engineName];
+assert.ok(engine, `unknown SCRAMJET_TEST_BROWSER ${engineName}`);
 const root = resolve(import.meta.dirname, "../..");
 const out = process.env.SCRAMJET_CACHE_OUTPUT || "/tmp/scramjet-cache-tests";
 await mkdir(out, { recursive: true });
@@ -110,7 +117,7 @@ const vite = await createServer({
 	],
 });
 await vite.listen();
-const browser = await chromium.launch({ headless: true });
+const browser = await engine.launch({ headless: true });
 const context = await browser.newContext();
 const page = await context.newPage();
 page.setDefaultTimeout(20000);
