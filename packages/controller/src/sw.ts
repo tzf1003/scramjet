@@ -171,6 +171,18 @@ export async function route(event: FetchEvent): Promise<Response> {
 
 		const rawheaders: RawHeaders = [...event.request.headers];
 
+		// Some browsers (Safari) expose no request body stream for FormData or
+		// Blob uploads, which would silently send an empty body.
+		let body: ReadableStream | ArrayBuffer | null = event.request.body;
+		if (
+			body == null &&
+			event.request.method !== "GET" &&
+			event.request.method !== "HEAD"
+		) {
+			const buffer = await event.request.clone().arrayBuffer();
+			if (buffer.byteLength) body = buffer;
+		}
+
 		const response = await tab.rpc.call(
 			"request",
 			{
@@ -180,17 +192,15 @@ export async function route(event: FetchEvent): Promise<Response> {
 				mode: event.request.mode,
 				referrer: event.request.referrer,
 				method: event.request.method,
-				body: event.request.body,
+				body,
 				cache: event.request.cache,
 				forceCrossOriginIsolated: false,
 				initialHeaders: rawheaders,
 				rawClientUrl: client ? client.url : undefined,
 				clientId: event.clientId || event.resultingClientId,
 			},
-			event.request.body instanceof ReadableStream ||
-				// @ts-expect-error the types for fetchevent are messed up
-				event.request.body instanceof ArrayBuffer
-				? [event.request.body]
+			body instanceof ReadableStream || body instanceof ArrayBuffer
+				? [body]
 				: undefined
 		);
 
