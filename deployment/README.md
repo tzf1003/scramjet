@@ -98,6 +98,9 @@ by every `*.xs2api.com` host) and Cloudflare can serve it once.
 2. Build the demo with `VITE_ASSET_ORIGIN=https://assets.xs2api.com` so the shell
    loads its scripts, bundles and wasm from that origin. Build without it to
    keep serving everything from each proxied host.
+   Also set `VITE_ASSET_VERSION` to the revision being built (for example the
+   commit hash). It is added to the runtime script URLs, so a CDN or browser
+   cache that holds the previous build under the same name cannot serve it.
 3. Let the asset host answer with `Cross-Origin-Resource-Policy: cross-origin`.
    The gateway already sends `same-origin` on every response, which the
    cross-origin isolated shells would refuse to load. For example:
