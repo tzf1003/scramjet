@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { resolve, join, extname } from "node:path";
-import { chromium } from "../../packages/runway/node_modules/playwright/index.mjs";
+import {
+	chromium,
+	firefox,
+	webkit,
+} from "../../packages/runway/node_modules/playwright/index.mjs";
+const engineName = process.env.SCRAMJET_TEST_BROWSER || "chromium";
+const engine = { chromium, firefox, webkit }[engineName];
+assert.ok(engine, `unknown SCRAMJET_TEST_BROWSER ${engineName}`);
 const root = resolve(import.meta.dirname, "../..");
 const out = process.env.SCRAMJET_CACHE_OUTPUT || "/tmp/scramjet-cache-tests";
 await mkdir(out, { recursive: true });
@@ -36,7 +43,7 @@ const server = createServer(async (req, res) => {
 	}
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const browser = await chromium.launch({ headless: true });
+const browser = await engine.launch({ headless: true });
 const page = await browser.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
