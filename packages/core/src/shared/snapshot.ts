@@ -257,7 +257,6 @@ export const NativeNumber = globalThis.Number;
 export const NativeObject = globalThis.Object;
 export const NativePromise = globalThis.Promise;
 export const NativeReadableStream = globalThis.ReadableStream;
-export const NativeResponse = globalThis.Response;
 export const NativeReflect = globalThis.Reflect;
 export const NativeRegExp = globalThis.RegExp;
 export const NativeSharedArrayBuffer = globalThis.SharedArrayBuffer;
