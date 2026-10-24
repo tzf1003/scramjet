@@ -160,6 +160,41 @@ addEventListener("message", (e) => {
 // Larger uploads keep streaming rather than being held in memory.
 const MAX_BUFFERED_BODY = 64 * 1024 * 1024;
 
+/**
+ * Reads a request body into one buffer. Returns null for an empty body and
+ * undefined once it exceeds MAX_BUFFERED_BODY, leaving the caller to stream it.
+ */
+async function readBody(
+	request: Request
+): Promise<ArrayBuffer | null | undefined> {
+	const reader = request.body?.getReader();
+	if (!reader) {
+		// No stream exposed (Safari for some uploads); the bytes are still there.
+		const buffer = await request.arrayBuffer();
+		return buffer.byteLength ? buffer : null;
+	}
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > MAX_BUFFERED_BODY) {
+			void reader.cancel();
+			return undefined;
+		}
+		chunks.push(value);
+	}
+	if (!size) return null;
+	const buffer = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		buffer.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return buffer.buffer;
+}
+
 export function shouldRoute(event: FetchEvent): boolean {
 	const url = new URL(event.request.url);
 	const tab = tabs.find((tab) => url.pathname.startsWith(tab.prefix));
@@ -178,14 +213,9 @@ export async function route(event: FetchEvent): Promise<Response> {
 		// browser (Safari delivers an empty multipart upload), so hand over the
 		// bytes instead. Only an unusually large upload is left to stream.
 		let body: ReadableStream | ArrayBuffer | null = event.request.body;
-		const length = Number(event.request.headers.get("content-length"));
-		if (
-			event.request.method !== "GET" &&
-			event.request.method !== "HEAD" &&
-			!(length > MAX_BUFFERED_BODY)
-		) {
-			const buffer = await event.request.clone().arrayBuffer();
-			body = buffer.byteLength ? buffer : null;
+		if (event.request.method !== "GET" && event.request.method !== "HEAD") {
+			const bytes = await readBody(event.request.clone());
+			if (bytes !== undefined) body = bytes;
 		}
 
 		const response = await tab.rpc.call(
