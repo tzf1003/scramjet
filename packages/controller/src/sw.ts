@@ -157,6 +157,9 @@ addEventListener("message", (e) => {
 	tabs.push(new ControllerReference(init.prefix, init.id, e.ports[0]));
 });
 
+// Larger uploads keep streaming rather than being held in memory.
+const MAX_BUFFERED_BODY = 64 * 1024 * 1024;
+
 export function shouldRoute(event: FetchEvent): boolean {
 	const url = new URL(event.request.url);
 	const tab = tabs.find((tab) => url.pathname.startsWith(tab.prefix));
@@ -171,16 +174,18 @@ export async function route(event: FetchEvent): Promise<Response> {
 
 		const rawheaders: RawHeaders = [...event.request.headers];
 
-		// Some browsers (Safari) expose no request body stream for FormData or
-		// Blob uploads, which would silently send an empty body.
+		// A request body stream does not survive the trip to the controller in every
+		// browser (Safari delivers an empty multipart upload), so hand over the
+		// bytes instead. Only an unusually large upload is left to stream.
 		let body: ReadableStream | ArrayBuffer | null = event.request.body;
+		const length = Number(event.request.headers.get("content-length"));
 		if (
-			body == null &&
 			event.request.method !== "GET" &&
-			event.request.method !== "HEAD"
+			event.request.method !== "HEAD" &&
+			!(length > MAX_BUFFERED_BODY)
 		) {
 			const buffer = await event.request.clone().arrayBuffer();
-			if (buffer.byteLength) body = buffer;
+			body = buffer.byteLength ? buffer : null;
 		}
 
 		const response = await tab.rpc.call(
