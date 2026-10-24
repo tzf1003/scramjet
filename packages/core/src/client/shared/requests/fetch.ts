@@ -53,6 +53,9 @@ export default function (client: ScramjetClient) {
 			if (client.box.instanceof(entry, "Blob")) {
 				files = true;
 				size += (entry as Blob).size;
+			} else {
+				// text fields are buffered too; their length is a lower bound
+				size += String(entry).length;
 			}
 		}
 		return files && size <= MAX_FLATTENED_BODY;
