@@ -81,6 +81,35 @@ function scriptBlockTypeForElement(
 	return getScriptBlockTypeString(type, language, hasType, hasLanguage);
 }
 
+// Script text can be assigned before its `type` is (React does this for
+// `<script type="speculationrules">`), so a script that looks like JavaScript
+// here may turn out to be a JSON data block. A failed rewrite must therefore
+// leave the text untouched instead of throwing into the page.
+function rewriteInlineScript(
+	client: ScramjetClient,
+	element: Element,
+	source: string,
+	isModule: boolean
+): string | null {
+	try {
+		return rewriteJs(
+			source,
+			"(anonymous script element)",
+			client.context,
+			client.meta,
+			isModule
+		) as string;
+	} catch {
+		// don't let a previous successful rewrite shadow the text we kept
+		client.natives.call(
+			"Element.prototype.removeAttribute",
+			element,
+			"scramjet-attr-script-source-src"
+		);
+		return null;
+	}
+}
+
 // TODO: this is pretty bad. really this whole file sucks
 function collectAttributeMap(
 	client: ScramjetClient,
@@ -431,19 +460,21 @@ export default function (
 				client.box.instanceof(ctx.this, "HTMLScriptElement") &&
 				isScriptType(scriptBlockType)
 			) {
-				newval = rewriteJs(
+				const rewritten = rewriteInlineScript(
+					client,
+					ctx.this,
 					html,
-					"(anonymous script element)",
-					client.context,
-					client.meta,
 					isModuleScriptType(scriptBlockType)
 				);
-				client.natives.call(
-					"Element.prototype.setAttribute",
-					ctx.this,
-					"scramjet-attr-script-source-src",
-					bytesToBase64(TextEncoder_encode(newval))
-				);
+				newval = rewritten ?? html;
+				if (rewritten !== null) {
+					client.natives.call(
+						"Element.prototype.setAttribute",
+						ctx.this,
+						"scramjet-attr-script-source-src",
+						bytesToBase64(TextEncoder_encode(rewritten))
+					);
+				}
 			} else if (client.box.instanceof(ctx.this, "HTMLStyleElement")) {
 				newval = rewriteCss(html, client.context, client.meta);
 			} else {
@@ -496,13 +527,13 @@ export default function (
 			client.box.instanceof(element, "HTMLScriptElement") &&
 			isScriptType(scriptBlockType)
 		) {
-			const newval: string = rewriteJs(
+			const newval = rewriteInlineScript(
+				client,
+				element,
 				value,
-				"(anonymous script element)",
-				client.context,
-				client.meta,
 				isModuleScriptType(scriptBlockType)
-			) as string;
+			);
+			if (newval === null) return value;
 			client.natives.call(
 				"Element.prototype.setAttribute",
 				element,

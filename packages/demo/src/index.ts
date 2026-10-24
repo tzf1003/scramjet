@@ -2,7 +2,7 @@ import { proxyResourceCache } from "./cache";
 import { loadEnvironment } from "./environment";
 import LibcurlClient from "@mercuryworkshop/libcurl-transport";
 import {
-	defaultConfigDev,
+	defaultConfig,
 	rewriteUrl,
 	ScramjetHeaders,
 } from "@mercuryworkshop/scramjet";
@@ -92,7 +92,7 @@ async function main() {
 	if (!["ws:", "wss:"].includes(wispUrl.protocol)) {
 		throw new Error("Wisp 地址必须使用 ws:// 或 wss://。");
 	}
-	let webrtc = defaultConfigDev.webrtc;
+	let webrtc = defaultConfig.webrtc;
 	if (gatewayAccess) {
 		const configuration = await fetch("/api/config", {
 			credentials: "same-origin",
@@ -111,7 +111,7 @@ async function main() {
 		serviceworker,
 		transport: new LibcurlClient({ wisp: wispUrl.href }),
 		scramjetConfig: {
-			...defaultConfigDev,
+			...defaultConfig,
 			environment: loadEnvironment(),
 			webrtc,
 		},
