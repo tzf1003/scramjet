@@ -66,7 +66,15 @@ jobs:
       - name: Install Playwright WebKit
         run: pnpm --dir packages/runway exec playwright install --with-deps webkit
 
-      - name: Test proxy browser navigation and uploads
+      - name: Test file upload through the proxy
+        run: pnpm test:navigation
+        working-directory: packages/demo
+        env:
+          SCRAMJET_NAVIGATION_FOCUS: upload
+          SCRAMJET_NAVIGATION_OUTPUT: ${{ runner.temp }}/scramjet-navigation-webkit-upload
+
+      - name: Test proxy browser navigation
+        if: ${{ !cancelled() }}
         run: pnpm test:navigation
         working-directory: packages/demo
         env:
@@ -77,7 +85,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: webkit-navigation
-          path: ${{ runner.temp }}/scramjet-navigation-webkit
+          path: |
+            ${{ runner.temp }}/scramjet-navigation-webkit
+            ${{ runner.temp }}/scramjet-navigation-webkit-upload
 
       - name: Test browser resource cache
         if: ${{ !cancelled() }}
