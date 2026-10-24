@@ -132,7 +132,7 @@ returns the image. All other paths still require a login.
 
 The fetch is server side and unauthenticated, so it is restricted: HTTPS to
 port 443 only, public unicast addresses only (checked on the connected
-address), at most three redirects, five seconds, 256 KiB, image content only,
+address), at most three redirects, five seconds for the whole lookup, 256 KiB, image content only,
 `Content-Security-Policy: sandbox`, an in-memory cache (1 hour for hits, 5
 minutes for misses), 60 uncached lookups per client per ten minutes and 16
 concurrent fetches. A site without an icon gets a 404; the gateway never

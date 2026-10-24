@@ -21,7 +21,7 @@ const MAX_REDIRECTS = 3;
 const MAX_DECLARED = 3;
 const FETCH_TIMEOUT = 5000;
 // Wall-clock budget for one lookup: page, redirects and every candidate.
-const LOOKUP_DEADLINE = 10000;
+const LOOKUP_DEADLINE = 5000;
 const MAX_CONCURRENT = 16;
 const CACHE_ENTRIES = 500;
 const HIT_TTL = 3600_000;
