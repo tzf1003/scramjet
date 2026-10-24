@@ -55,12 +55,12 @@ symlink when the container is created, so recreate it after switching releases
 The gateway caches file responses according to their resolved file, so a target
 URL ending in `.js` still receives an uncached HTML shell.
 
-| Resource | Cache policy |
-| --- | --- |
-| `/login.js`, `/access-key-client.js`, `/access-session.js`, `/style.css` | Public, 5 minutes, then revalidate |
-| Content-hashed JS/CSS/images/fonts in `/assets/` | Private browser cache, 1 year, immutable |
-| Other JS/CSS/WASM/images/fonts in `/scramjet/`, `/controller/`, `/assets/`, plus `/home.js` and `/icon.png` | Private browser cache, revalidate with ETag on each use |
-| HTML shells, `/login`, `/sw.js`, APIs, TURN credentials, version/source downloads and errors | `no-store` |
+| Resource                                                                                     | Cache policy                                            |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `/login.js`, `/access-key-client.js`, `/access-session.js`, `/style.css`                     | Public, 5 minutes, then revalidate                      |
+| Content-hashed JS/CSS/images/fonts in `/assets/`                                             | Private browser cache, 1 year, immutable                |
+| Other JS/CSS/WASM/images/fonts in `/scramjet/`, `/controller/`, `/assets/`, plus `/home.js`  | Private browser cache, revalidate with ETag on each use |
+| HTML shells, `/login`, `/sw.js`, APIs, TURN credentials, version/source downloads and errors | `no-store`                                              |
 
 Cacheable file responses omit `Set-Cookie`. Authenticated HTML and API requests
 continue renewing access cookies. Private file requests validate access before
@@ -111,13 +111,34 @@ by every `*.xs2api.com` host) and Cloudflare can serve it once.
    ```
 
 The asset host needs no key: it only returns `GET`/`HEAD`/`OPTIONS` for
-`/scramjet/*`, `/controller/*`, `/assets/*` and `/icon.png`, answers any other
+`/scramjet/*`, `/controller/*` and `/assets/*`, answers any other
 path with 404 (never an HTML shell, API or login state), sets
 `Access-Control-Allow-Origin: *`, and never sets or varies on cookies. Hashed
 `/assets/` files are `public, max-age=31536000, immutable`; the others are
 `public, no-cache` and revalidate with an ETag. Create a Cloudflare cache rule
 for this host with the origin cache-control as Edge TTL. These files contain no
 secrets, but anyone can download them.
+
+## Target site icons
+
+Browsers fetch tab, bookmark and home-screen icons outside the proxy runtime and
+often without cookies, so the gateway answers icon requests without a login. A
+proxied hostname serves `/favicon.ico`, `/apple-touch-icon.png` and
+`/apple-touch-icon-precomposed.png`, and any host serves
+`/__scramjet_icon?host=<hostname>[&kind=apple]` (the shell uses it to follow
+navigation). The gateway reads the target's home page for `<link rel="icon">` or
+`apple-touch-icon` declarations, falls back to the conventional icon paths, and
+returns the image. All other paths still require a login.
+
+The fetch is server side and unauthenticated, so it is restricted: HTTPS to
+port 443 only, public unicast addresses only (checked on the connected
+address), at most three redirects, five seconds for the whole lookup, 256 KiB, image content only,
+`Content-Security-Policy: sandbox`, an in-memory cache (1 hour for hits, 5
+minutes for misses), 60 uncached lookups per client per ten minutes and 16
+concurrent fetches. A site without an icon gets a 404; the gateway never
+substitutes its own. The gateway's own hosts and the asset host answer 404 for
+these paths. Responses are `public`, so a Cloudflare cache rule may cache them;
+the host is part of the cache key.
 
 ## Browser resource cache
 

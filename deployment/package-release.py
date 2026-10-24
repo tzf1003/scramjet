@@ -45,7 +45,7 @@ for name in ['compose.yaml', 'nginx.conf']:
     shutil.copy2(args.base / name, release / name)
 shutil.copytree(args.base / 'coturn', release / 'coturn', ignore=shutil.ignore_patterns('._*'))
 shutil.copytree(args.frontend, release / 'public', ignore=shutil.ignore_patterns('._*'))
-for name in ['app.mjs', 'access-key.mjs', 'client-ip.mjs', 'credential-server.mjs', 'Dockerfile', 'package.json', 'package-lock.json']:
+for name in ['app.mjs', 'access-key.mjs', 'client-ip.mjs', 'credential-server.mjs', 'site-icon.mjs', 'Dockerfile', 'package.json', 'package-lock.json']:
     shutil.copy2(repo / 'deployment' / name, release / name)
 for source in (repo / 'deployment/public').iterdir():
     if source.is_file() and not source.name.startswith('._'):

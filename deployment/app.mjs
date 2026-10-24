@@ -12,6 +12,7 @@ import {
 } from "./credential-server.mjs";
 import { createAccessControl, LEGACY_COOKIE } from "./access-key.mjs";
 import { createClientIp } from "./client-ip.mjs";
+import { createSiteIcons, ICON_PATHS, SITE_ICON_PATH } from "./site-icon.mjs";
 
 const env = process.env;
 const secret = env.CREDENTIAL_SESSION_SECRET;
@@ -87,7 +88,7 @@ const publicAssets = new Set([
 ]);
 // Only build output that holds no secrets: runtime scripts, wasm and bundles.
 const sharedAssets =
-	/^\/(?:(?:scramjet|controller)\/[^/]+\.(?:js|wasm)|assets\/[^/]+\.(?:js|css)|icon\.png)$/;
+	/^\/(?:(?:scramjet|controller)\/[^/]+\.(?:js|wasm)|assets\/[^/]+\.(?:js|css))$/;
 const hashedAsset = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[^/.]+$/;
 function assetCacheControl(name, shared = false) {
 	if (shared)
@@ -106,7 +107,7 @@ function assetCacheControl(name, shared = false) {
 			return "private, max-age=31536000, immutable";
 		return "private, no-cache";
 	}
-	if (["/home.js", "/icon.png"].includes(name)) return "private, no-cache";
+	if (name === "/home.js") return "private, no-cache";
 	return "no-store";
 }
 function json(res, code, value) {
@@ -117,6 +118,10 @@ function json(res, code, value) {
 	res.end(JSON.stringify(value));
 }
 const ip = createClientIp(env.TRUSTED_PROXY_CIDRS);
+const siteIcons = createSiteIcons({
+	proxyDomain,
+	reserved: [proxyDomain, gatewayHost, assetHost],
+});
 async function serve(req, res, name, shared = false) {
 	const file = path.resolve(root, "." + name);
 	if (!file.startsWith(root + path.sep))
@@ -219,6 +224,18 @@ const server = http.createServer(async (req, res) => {
 				return json(res, 404, { error: "not found" });
 			return await serve(req, res, name, true);
 		}
+		// Icons are the only target content served without a login. A site with
+		// no icon gets a 404, as do the gateway's own hosts.
+		const iconUrl = new URL(req.url, origin);
+		if (
+			(req.method === "GET" || req.method === "HEAD") &&
+			(ICON_PATHS.has(iconUrl.pathname) || iconUrl.pathname === SITE_ICON_PATH)
+		) {
+			if (await siteIcons(req, res, iconUrl, new URL(origin).hostname, ip(req)))
+				return;
+			if (ICON_PATHS.has(iconUrl.pathname))
+				return json(res, 404, { error: "not found" });
+		}
 		if (req.url === "/api/login" && req.method === "POST") {
 			if (req.headers.origin !== origin)
 				return json(res, 403, { error: "请求来源无效" });
@@ -320,13 +337,7 @@ const server = http.createServer(async (req, res) => {
 			(url.hostname === proxyDomain || url.hostname === gatewayHost) &&
 			!url.searchParams.has("__scramjet_url") &&
 			!/^\/(?:scramjet|controller|assets)\//.test(name) &&
-			![
-				"/sw.js",
-				"/icon.png",
-				"/version.json",
-				"/source.tar.gz",
-				"/home.js",
-			].includes(name)
+			!["/sw.js", "/version.json", "/source.tar.gz", "/home.js"].includes(name)
 		)
 			return await serve(req, res, "/home.html");
 		if (name === "/home.js") return await serve(req, res, name);
@@ -336,7 +347,6 @@ const server = http.createServer(async (req, res) => {
 		if (
 			name === "/source.tar.gz" ||
 			name === "/version.json" ||
-			name === "/icon.png" ||
 			name === "/sw.js" ||
 			/^\/(?:scramjet|controller|assets)\//.test(name)
 		)
