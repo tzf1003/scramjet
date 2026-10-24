@@ -166,7 +166,9 @@ class RemoteTransport implements ProxyTransport {
 	}
 }
 
-const sw = navigator.serviceWorker.controller;
+// undefined in frames without a service worker context, such as the sandboxed
+// iframes some sites create (Cloudflare's challenge frame)
+const sw = navigator.serviceWorker?.controller;
 
 type Init = {
 	config: Config;
