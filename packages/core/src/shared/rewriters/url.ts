@@ -141,7 +141,12 @@ export function rewriteUrl(
 			)
 		);
 	} else if (String_startsWith(url, "blob:")) {
-		return context.prefix.href + url;
+		// the worker rewriter picks import vs importScripts from this flag, and
+		// the fetch handler only has the query to read it from
+		const moduleParam = options?.isModule
+			? "?" + QP.isModule + "=module"
+			: "";
+		return context.prefix.href + url + moduleParam;
 	} else if (String_startsWith(url, "data:")) {
 		const URL_MAX_LENGTH = 1024 * 1024 * 2;
 		const BUFFER = 1024;
@@ -225,7 +230,11 @@ export function unrewriteUrl(url: string | URL, context: ScramjetContext) {
 		// realistically this shouldn't happen
 		return url;
 	} else if (String_startsWith(url, context.prefix.href + "blob:")) {
-		return url.substring(context.prefix.href.length);
+		const blobUrl = url.substring(context.prefix.href.length);
+		const moduleParam = "?" + QP.isModule + "=module";
+		return blobUrl.slice(-moduleParam.length) === moduleParam
+			? blobUrl.slice(0, -moduleParam.length)
+			: blobUrl;
 	} else if (String_startsWith(url, context.prefix.href + "data:")) {
 		return url.substring(context.prefix.href.length);
 	} else if (

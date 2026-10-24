@@ -170,6 +170,22 @@ export default [
 		`
 	),
 	workerTest(
+		// A bundler's module worker built from a Blob URL (Datadog, monaco) must
+		// still be treated as a module: the importScripts bootstrap makes Chrome
+		// refuse it with "Module scripts don't support importScripts()".
+		"workers-module-from-blob",
+		`
+			${ASK}
+			const src = "export const v = 1; self.onmessage = (e) => postMessage({ kind: 'ok', v });";
+			const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+			const w = new Worker(url, { type: "module" });
+			const d = await ask(w);
+			assertEqual(d.kind, "ok", "module worker from a blob: " + JSON.stringify(d));
+			assertEqual(d.v, 1, "the module's export");
+			w.terminate();
+		`
+	),
+	workerTest(
 		"workers-url-argument",
 		`
 			${ASK}
