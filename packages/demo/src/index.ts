@@ -28,6 +28,7 @@ import {
 } from "./handoff";
 import { isBlankDocument, syncShellSurface } from "./chrome";
 import { failLoading, finishLoading, setStage, showHost } from "./loading";
+import { syncSiteIcon } from "./site-icon";
 
 const app = document.getElementById("app")!;
 
@@ -82,6 +83,7 @@ async function main() {
 	const handoff = gatewayEntry ? null : consumeHandoff(entry, base);
 	document.title = target.hostname;
 	showHost(target.hostname);
+	syncSiteIcon(target);
 	setStage("正在初始化代理", 0.2);
 
 	const serviceworker = await registerWorker();
@@ -152,6 +154,7 @@ async function main() {
 			history.replaceState(null, "", publicUrl);
 		}
 		document.title = url.hostname;
+		syncSiteIcon(url);
 	};
 	const syncSurface = syncShellSurface(iframe);
 	const watcher = new ManagedPlugin("demo-navigation", []);

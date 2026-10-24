@@ -78,7 +78,6 @@ server {
         add_header Cache-Control "no-cache";
         try_files $uri =404;
     }
-    location = /icon.png { try_files $uri =404; }
     location ^~ /scramjet/ { try_files $uri =404; }
     location ^~ /controller/ { try_files $uri =404; }
     location ^~ /assets/ { try_files $uri =404; }
@@ -92,9 +91,9 @@ server {
 }
 ```
 
-入口保留 `/sw.js`、`/icon.png`、`/scramjet/`、`/controller/`、`/assets/` 和
+入口保留 `/sw.js`、`/scramjet/`、`/controller/`、`/assets/` 和
 `/wisp/` 作为代理资源路径；开发时还保留 `/src/`、`/node_modules/`、`/@vite/`、
-`/@id/` 和 `/@fs/`。`/__scramjet_handoff` 用于跨域导航状态交接。访问目标站
+`/@id/` 和 `/@fs/`。`/__scramjet_handoff` 用于跨域导航状态交接，`/__scramjet_icon` 用于读取目标站点图标。访问目标站
 这些路径时，使用下面的显式目标参数入口，避免与代理运行文件冲突。
 
 ## 页面跳转与刷新
