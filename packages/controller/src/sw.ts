@@ -200,6 +200,8 @@ async function readBody(
 // message, so a request that arrives first waits for them rather than being
 // sent to the network, where it would reach the gateway instead of the target.
 const REVIVE_WAIT = 3000;
+// A restarted worker only recognizes the default prefix; a custom config.prefix
+// is not known until its controller registers again.
 const DEFAULT_PREFIX = /^\/~\/sj\/[^/]+\//;
 const tabWaiters = new Set<() => void>();
 
