@@ -107,8 +107,20 @@ async function main() {
 		}
 		webrtc = (await configuration.json()).webrtc;
 	}
+	const assetOrigin = import.meta.env.VITE_ASSET_ORIGIN
+		? new URL(import.meta.env.VITE_ASSET_ORIGIN).origin
+		: "";
 	const controller = new Controller({
 		serviceworker,
+		// With a shared asset host the runtime files load from one fixed URL, so
+		// the browser cache serves them to every proxied hostname.
+		config: assetOrigin
+			? {
+					scramjetPath: assetOrigin + "/scramjet/scramjet.js",
+					injectPath: assetOrigin + "/controller/controller.inject.js",
+					wasmPath: assetOrigin + "/scramjet/scramjet.wasm",
+				}
+			: undefined,
 		transport: new LibcurlClient({ wisp: wispUrl.href }),
 		scramjetConfig: {
 			...defaultConfigDev,
