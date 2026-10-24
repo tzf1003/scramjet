@@ -1,4 +1,4 @@
-import { NativeHeaders, NativeResponse } from "@/shared/snapshot";
+import { NativeHeaders, NativeObject, NativeResponse } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./xmlhttprequest";
 import { String } from "@/shared/snapshot";
@@ -57,11 +57,14 @@ export default function (client: ScramjetClient) {
 							"content-type",
 							serialized.headers.get("content-type") as string
 						);
-						ctx.args[1] = {
-							...init,
-							body: await serialized.arrayBuffer(),
-							headers,
-						};
+						// Inherit from init so options it inherits or defines as getters
+						// (method, signal, ...) are still read by fetch.
+						const next = NativeObject.create(init);
+						NativeObject.defineProperties(next, {
+							body: { value: await serialized.arrayBuffer() },
+							headers: { value: headers },
+						});
+						ctx.args[1] = next;
 						return ctx.call();
 					})()
 				);
