@@ -35,6 +35,16 @@ if (
 	(gatewayHost !== proxyDomain && !gatewayHost.endsWith("." + proxyDomain))
 )
 	throw new Error("Gateway host must belong to the configured proxy domain");
+// Optional host serving the build's static files without a login, so that every
+// proxied hostname can load them from one URL and share the browser cache.
+const assetHost = (env.ASSET_HOST || "").trim().toLowerCase();
+if (
+	assetHost &&
+	(!validHostname(assetHost) ||
+		!assetHost.endsWith("." + proxyDomain) ||
+		assetHost === gatewayHost)
+)
+	throw new Error("Asset host must be a subdomain of the proxy domain");
 const accessScope = (env.ACCESS_COOKIE_SCOPE || "domain").trim().toLowerCase();
 if (!["domain", "host"].includes(accessScope))
 	throw new Error("ACCESS_COOKIE_SCOPE must be domain or host");
@@ -75,7 +85,15 @@ const publicAssets = new Set([
 	"/access-session.js",
 	"/style.css",
 ]);
-function assetCacheControl(name) {
+// Only build output that holds no secrets: runtime scripts, wasm and bundles.
+const sharedAssets =
+	/^\/(?:(?:scramjet|controller)\/[^/]+\.(?:js|wasm)|assets\/[^/]+\.(?:js|css)|icon\.png)$/;
+const hashedAsset = /^\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[^/.]+$/;
+function assetCacheControl(name, shared = false) {
+	if (shared)
+		return hashedAsset.test(name)
+			? "public, max-age=31536000, immutable"
+			: "public, no-cache";
 	if (publicAssets.has(name)) return "public, max-age=300, must-revalidate";
 	if (
 		/^\/(?:scramjet|controller|assets)\//.test(name) &&
@@ -99,7 +117,7 @@ function json(res, code, value) {
 	res.end(JSON.stringify(value));
 }
 const ip = createClientIp(env.TRUSTED_PROXY_CIDRS);
-async function serve(req, res, name) {
+async function serve(req, res, name, shared = false) {
 	const file = path.resolve(root, "." + name);
 	if (!file.startsWith(root + path.sep))
 		return json(res, 404, { error: "not found" });
@@ -113,10 +131,11 @@ async function serve(req, res, name) {
 		".json": "application/json",
 		".wasm": "application/wasm",
 		".svg": "image/svg+xml",
+		".png": "image/png",
 		".gz": "application/gzip",
 		".txt": "text/plain; charset=utf-8",
 	};
-	const cacheControl = assetCacheControl(name);
+	const cacheControl = assetCacheControl(name, shared);
 	const headers = {
 		"content-type": mime[path.extname(file)] || "application/octet-stream",
 		"cache-control": cacheControl,
@@ -183,6 +202,23 @@ const server = http.createServer(async (req, res) => {
 			});
 		const origin = requestOrigin(req);
 		if (!origin) return json(res, 421, { error: "Invalid host" });
+		if (assetHost && new URL(origin).hostname === assetHost) {
+			// Static files only: no login, no cookies, never an HTML shell.
+			res.setHeader("access-control-allow-origin", "*");
+			if (req.method === "OPTIONS") {
+				res.writeHead(204, {
+					"access-control-allow-methods": "GET, HEAD, OPTIONS",
+					"access-control-max-age": "86400",
+				});
+				return res.end();
+			}
+			const name = new URL(req.url, origin).pathname;
+			if (req.method !== "GET" && req.method !== "HEAD")
+				return json(res, 405, { error: "method not allowed" });
+			if (!sharedAssets.test(name))
+				return json(res, 404, { error: "not found" });
+			return await serve(req, res, name, true);
+		}
 		if (req.url === "/api/login" && req.method === "POST") {
 			if (req.headers.origin !== origin)
 				return json(res, 403, { error: "请求来源无效" });

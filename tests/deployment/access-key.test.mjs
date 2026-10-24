@@ -698,3 +698,120 @@ test("gateway enforces the key for HTTP, WebSocket and TURN, renews cookies, and
 	createKeyClient({ storage }).forget();
 	assert.equal(storage.getItem(STORAGE_KEY), undefined);
 });
+
+test("asset host serves only build files without a login and shares one cache entry", async (t) => {
+	const directory = await mkdtemp(path.join(os.tmpdir(), "scramjet-assets-"));
+	await writeFile(path.join(directory, "key"), key, { mode: 0o600 });
+	await writeFile(path.join(directory, "index.html"), "target shell");
+	await writeFile(path.join(directory, "version.json"), "{}");
+	for (const name of ["scramjet", "controller", "assets"])
+		await mkdir(path.join(directory, name));
+	for (const name of [
+		"scramjet/scramjet.js",
+		"scramjet/scramjet.wasm",
+		"controller/controller.inject.js",
+		"assets/index-aB1_cD23.js",
+		"assets/index.css",
+	])
+		await writeFile(path.join(directory, name), "build file");
+	const child = spawn(process.execPath, ["deployment/app.mjs"], {
+		cwd: new URL("../..", import.meta.url),
+		env: {
+			...process.env,
+			PORT: "0",
+			LISTEN_HOST: "127.0.0.1",
+			PROXY_DOMAIN: "*.proxy.test",
+			GATEWAY_HOST: "my.proxy.test",
+			ASSET_HOST: "assets.proxy.test",
+			ACCESS_KEY_FILE: path.join(directory, "key"),
+			PUBLIC_ROOT: directory,
+			CREDENTIAL_SESSION_SECRET: crypto.randomBytes(32).toString("hex"),
+			TURN_STATIC_AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
+			TURN_URLS: "turn:192.0.2.1:3478",
+			SOURCE_COMMIT: "asset-host-test",
+			TRUSTED_PROXY_CIDRS: "",
+		},
+		stdio: ["ignore", "pipe", "pipe"],
+	});
+	t.after(async () => {
+		if (child.exitCode === null) {
+			child.kill("SIGTERM");
+			await once(child, "exit");
+		}
+		await rm(directory, { recursive: true, force: true });
+	});
+	const port = await new Promise((resolve, reject) => {
+		const timeout = setTimeout(
+			() => reject(new Error("startup timeout")),
+			10000
+		);
+		child.stdout.on("data", (data) => {
+			const match = String(data).match(/port=(\d+)/);
+			if (match) {
+				clearTimeout(timeout);
+				resolve(Number(match[1]));
+			}
+		});
+		child.once("exit", (code) => reject(new Error(`exited: ${code}`)));
+	});
+	const call = (route, method = "GET", headers = {}) =>
+		new Promise((resolve, reject) => {
+			const request = http.request(
+				`http://127.0.0.1:${port}${route}`,
+				{ method, headers: { host: "assets.proxy.test", ...headers } },
+				(response) => {
+					const chunks = [];
+					response.on("data", (chunk) => chunks.push(chunk));
+					response.on("end", () =>
+						resolve({
+							status: response.statusCode,
+							headers: { get: (name) => response.headers[name] ?? null },
+							text: async () => Buffer.concat(chunks).toString(),
+						})
+					);
+				}
+			);
+			request.on("error", reject);
+			request.end();
+		});
+	for (const route of [
+		"/scramjet/scramjet.js",
+		"/scramjet/scramjet.wasm",
+		"/controller/controller.inject.js",
+	]) {
+		const response = await call(route);
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get("access-control-allow-origin"), "*");
+		assert.equal(response.headers.get("cache-control"), "public, no-cache");
+		assert.equal(response.headers.get("vary"), null);
+		assert.equal(response.headers.get("set-cookie"), null);
+		assert.equal(await response.text(), "build file");
+	}
+	const hashed = await call("/assets/index-aB1_cD23.js");
+	assert.equal(
+		hashed.headers.get("cache-control"),
+		"public, max-age=31536000, immutable"
+	);
+	assert.equal(hashed.headers.get("vary"), null);
+	const etag = hashed.headers.get("etag");
+	assert.equal(
+		(await call("/assets/index-aB1_cD23.js", "GET", { "if-none-match": etag }))
+			.status,
+		304
+	);
+	assert.equal((await call("/scramjet/scramjet.js", "OPTIONS")).status, 204);
+	assert.equal((await call("/scramjet/scramjet.js", "POST")).status, 405);
+	for (const route of [
+		"/",
+		"/index.html",
+		"/version.json",
+		"/key",
+		"/api/session",
+	])
+		assert.equal((await call(route)).status, 404, route);
+	// Other hosts keep requiring the key for the same files.
+	const gated = await call("/scramjet/scramjet.js", "GET", {
+		host: "example-com.proxy.test",
+	});
+	assert.equal(gated.status, 302);
+});

@@ -13,10 +13,16 @@ export default defineConfig(({ mode }) => {
 	const proxyDomain = normalizeProxyDomain(
 		env.VITE_PROXY_DOMAIN || DEFAULT_PROXY_DOMAIN
 	);
+	// Optional shared host for the heavy static files: every proxied hostname is
+	// a separate origin, so a fixed URL is what lets them share one HTTP cache.
+	const assetOrigin = env.VITE_ASSET_ORIGIN
+		? new URL(env.VITE_ASSET_ORIGIN).origin
+		: "";
 	const externalBuild = existsSync("/Volumes/1T")
 		? "/Volumes/1T/scramjet/build/demo"
 		: undefined;
 	return {
+		base: assetOrigin ? assetOrigin + "/" : "/",
 		cacheDir: externalBuild
 			? `${externalBuild}/vite-cache`
 			: "node_modules/.vite",
@@ -43,6 +49,22 @@ export default defineConfig(({ mode }) => {
 			},
 		},
 		plugins: [
+			{
+				name: "shared-asset-origin",
+				transformIndexHtml: {
+					order: "post",
+					handler(html) {
+						if (!assetOrigin) return html;
+						// The classic runtime scripts are not bundled, so Vite keeps their
+						// root-relative paths. crossorigin loads them with CORS, which the
+						// asset host allows for any origin.
+						return html.replace(
+							/<script src="\/((?:scramjet|controller)\/[^"]+)">/g,
+							`<script crossorigin src="${assetOrigin}/$1">`
+						);
+					},
+				},
+			},
 			{
 				name: "wildcard-document-entry",
 				configureServer(server) {

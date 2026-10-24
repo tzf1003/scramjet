@@ -62,6 +62,41 @@ which Cloudflare's ordinary HTTP cache does not accelerate. This policy improves
 gateway loading and repeat visits; target-site transfer time also depends on
 the origin server's network path.
 
+## Shared asset host (optional)
+
+Every proxied hostname is its own origin, so a visit to a new site downloads the
+runtime (`scramjet.js`, `scramjet.wasm`, the demo bundle) again. Setting
+`ASSET_HOST` makes the gateway also answer on one login-free hostname that
+serves only build output, so the browser cache (partitioned by site, so shared
+by every `*.xs2api.com` host) and Cloudflare can serve it once.
+
+1. Add `ASSET_HOST=assets.xs2api.com` to the app environment. It must be a
+   subdomain of the proxy domain and differ from `GATEWAY_HOST`. Unset (the
+   default) keeps the current behaviour.
+2. Build the demo with `VITE_ASSET_ORIGIN=https://assets.xs2api.com` so the shell
+   loads its scripts, bundles and wasm from that origin. Build without it to
+   keep serving everything from each proxied host.
+3. Let the asset host answer with `Cross-Origin-Resource-Policy: cross-origin`.
+   The gateway already sends `same-origin` on every response, which the
+   cross-origin isolated shells would refuse to load. For example:
+
+   ```nginx
+   map $host $corp {
+       default same-origin;
+       assets.xs2api.com cross-origin;
+   }
+   add_header Cross-Origin-Resource-Policy $corp always;
+   ```
+
+The asset host needs no key: it only returns `GET`/`HEAD`/`OPTIONS` for
+`/scramjet/*`, `/controller/*`, `/assets/*` and `/icon.png`, answers any other
+path with 404 (never an HTML shell, API or login state), sets
+`Access-Control-Allow-Origin: *`, and never sets or varies on cookies. Hashed
+`/assets/` files are `public, max-age=31536000, immutable`; the others are
+`public, no-cache` and revalidate with an ETag. Create a Cloudflare cache rule
+for this host with the origin cache-control as Edge TTL. These files contain no
+secrets, but anyone can download them.
+
 ## Browser resource cache
 
 The internal resource cache is enabled by default. `HttpCachePlugin` uses the
