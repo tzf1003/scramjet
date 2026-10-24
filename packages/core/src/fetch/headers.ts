@@ -144,7 +144,12 @@ export function rewriteRequestHeaders(
 		rawOriginUrl &&
 		rawOriginUrl.pathname.startsWith(handler.context.prefix.pathname)
 	) {
-		headers.set("Origin", originUrl.origin);
+		if (shouldSendOrigin(request, parsed, originUrl)) {
+			headers.set("Origin", originUrl.origin);
+		} else {
+			// don't let the browser's proxy-origin value through either
+			headers.delete("Origin");
+		}
 
 		const referer = createReferrerString(
 			originUrl,
@@ -168,6 +173,25 @@ export function rewriteRequestHeaders(
 	applyFetchMetadataHeaders(headers, request, parsed, handler);
 
 	return headers;
+}
+
+/**
+ * Browsers attach Origin to every request that isn't a GET or HEAD, but to a
+ * GET/HEAD only when it is a cross-origin CORS request. Top-level navigations
+ * and no-cors subresource loads never carry one, and servers do check it:
+ * claude.ai's OAuth callback answers a navigation that arrives from
+ * vercel.com with `Origin: https://vercel.com` with a 403.
+ */
+function shouldSendOrigin(
+	request: ScramjetFetchRequest,
+	parsed: ScramjetFetchParsed,
+	originUrl: URL
+): boolean {
+	if (request.method !== "GET" && request.method !== "HEAD") return true;
+	return (
+		computeFetchMode(request, parsed) === "cors" &&
+		originUrl.origin !== parsed.url.origin
+	);
 }
 
 /**
