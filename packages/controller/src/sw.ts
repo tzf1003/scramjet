@@ -155,6 +155,7 @@ addEventListener("message", (e) => {
 		tabs.splice(existing, 1);
 	}
 	tabs.push(new ControllerReference(init.prefix, init.id, e.ports[0]));
+	for (const wake of tabWaiters) wake();
 });
 
 // Larger uploads keep streaming rather than being held in memory.
@@ -195,16 +196,44 @@ async function readBody(
 	return buffer.buffer;
 }
 
+// A restarted worker has no tabs until the controllers answer its revive
+// message, so a request that arrives first waits for them rather than being
+// sent to the network, where it would reach the gateway instead of the target.
+const REVIVE_WAIT = 3000;
+// A restarted worker only recognizes the default prefix; a custom config.prefix
+// is not known until its controller registers again.
+const DEFAULT_PREFIX = /^\/~\/sj\/[^/]+\//;
+const tabWaiters = new Set<() => void>();
+
+function findTab(url: URL) {
+	return tabs.find((tab) => url.pathname.startsWith(tab.prefix));
+}
+
+function waitForTab(url: URL): Promise<ControllerReference | undefined> {
+	return new Promise((resolve) => {
+		const finish = () => {
+			clearTimeout(timer);
+			tabWaiters.delete(check);
+			resolve(findTab(url));
+		};
+		const check = () => {
+			if (findTab(url)) finish();
+		};
+		const timer = setTimeout(finish, REVIVE_WAIT);
+		tabWaiters.add(check);
+	});
+}
+
 export function shouldRoute(event: FetchEvent): boolean {
 	const url = new URL(event.request.url);
-	const tab = tabs.find((tab) => url.pathname.startsWith(tab.prefix));
-	return tab !== undefined;
+	return findTab(url) !== undefined || DEFAULT_PREFIX.test(url.pathname);
 }
 
 export async function route(event: FetchEvent): Promise<Response> {
 	try {
 		const url = new URL(event.request.url);
-		const tab = tabs.find((tab) => url.pathname.startsWith(tab.prefix))!;
+		const tab = findTab(url) ?? (await waitForTab(url));
+		if (!tab) return await fetch(event.request);
 		const client = await clients.get(event.clientId);
 
 		const rawheaders: RawHeaders = [...event.request.headers];
