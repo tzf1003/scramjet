@@ -274,11 +274,6 @@ async function handleBlobOrDataUrlFetch(
 	if (handler.crossOriginIsolated) {
 		headers.set("Cross-Origin-Opener-Policy", "same-origin");
 		headers.set("Cross-Origin-Embedder-Policy", "require-corp");
-		// the proxied host sits on a different proxy hostname than the page that
-		// embeds it (a Claude artifact's iframe, a CDN's script). Under the parent's
-		// require-corp Chrome blocks such a response unless it declares itself
-		// loadable; all proxy hostnames share one site, so same-site is enough.
-		headers.set("Cross-Origin-Resource-Policy", "same-site");
 	}
 
 	if (parsed.isFakeDataURL) NativeURL.revokeObjectURL(dataUrl);

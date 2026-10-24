@@ -110,6 +110,15 @@ export async function rewriteResponseHeaders(
 		headers.set("Cross-Origin-Opener-Policy", "same-origin");
 	}
 
+	if (handler.crossOriginIsolated) {
+		// a proxied host is served from its own proxy hostname, so for the
+		// embedding page (a Claude artifact's iframe, a CDN's script) it is a
+		// cross-origin load. Under the parent's require-corp Chrome refuses such a
+		// response unless it declares a resource policy; all proxy hostnames share
+		// one site, so same-site is enough.
+		headers.set("Cross-Origin-Resource-Policy", "same-site");
+	}
+
 	if (parsed.destination === "document" || parsed.destination === "iframe") {
 		headers.set("Referrer-Policy", "unsafe-url");
 	}
