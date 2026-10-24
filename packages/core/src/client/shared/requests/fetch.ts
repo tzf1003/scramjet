@@ -1,4 +1,4 @@
-import { NativeHeaders } from "@/shared/snapshot";
+import { NativeHeaders, NativeResponse } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./xmlhttprequest";
 import { String } from "@/shared/snapshot";
@@ -19,15 +19,53 @@ function rewriteUrlOptionsForFetch(init: RequestInit | undefined) {
 	};
 }
 
+// Uploads larger than this keep streaming rather than being read into memory.
+const MAX_FLATTENED_BODY = 64 * 1024 * 1024;
+
 export default function (client: ScramjetClient) {
+	/**
+	 * Whether `body` is a FormData holding files. Safari does not deliver the file
+	 * parts of such a body to the service worker (the upload arrives with an empty
+	 * file), so the page serializes it itself before the request leaves.
+	 */
+	function hasFiles(body: unknown): body is FormData {
+		if (!client.box.instanceof(body, "FormData")) return false;
+		let size = 0;
+		let files = false;
+		for (const entry of (body as FormData).values()) {
+			if (client.box.instanceof(entry, "Blob")) {
+				files = true;
+				size += (entry as Blob).size;
+			}
+		}
+		return files && size <= MAX_FLATTENED_BODY;
+	}
+
 	client.Proxy("fetch", {
 		apply(ctx) {
 			if (client.box.instanceof(ctx.args[0], "Request")) return;
 			const url = String(ctx.args[0]);
-			ctx.args[0] = client.rewriteUrl(
-				url,
-				rewriteUrlOptionsForFetch(ctx.args[1] as RequestInit | undefined)
-			);
+			const init = ctx.args[1] as RequestInit | undefined;
+			ctx.args[0] = client.rewriteUrl(url, rewriteUrlOptionsForFetch(init));
+
+			if (init && hasFiles(init.body)) {
+				ctx.return(
+					(async () => {
+						const serialized = new NativeResponse(init.body as FormData);
+						const headers = new NativeHeaders(init.headers);
+						headers.set(
+							"content-type",
+							serialized.headers.get("content-type") as string
+						);
+						ctx.args[1] = {
+							...init,
+							body: await serialized.arrayBuffer(),
+							headers,
+						};
+						return ctx.call();
+					})()
+				);
+			}
 		},
 	});
 

@@ -220,6 +220,36 @@ try {
 		)
 	);
 	results.push("cross-host POST retains body and controller");
+	const frame = await (
+		await page.locator("#app > iframe").elementHandle()
+	).contentFrame();
+	const uploadOffset = requests.length;
+	await frame.evaluate(async () => {
+		const form = new FormData();
+		form.append(
+			"file",
+			new File(["A".repeat(5000)], "pic.png", { type: "image/png" })
+		);
+		form.append("client_upload_id", "abc");
+		const res = await fetch("/upload", { method: "POST", body: form });
+		await res.text();
+	});
+	const upload = requests
+		.slice(uploadOffset)
+		.find((r) => r.url === "https://unrelated.test/upload");
+	assert.ok(upload, "file upload requested");
+	const contentType = upload.headers.find(
+		([k]) => k.toLowerCase() === "content-type"
+	)[1];
+	const boundary = /^multipart\/form-data; boundary=(.+)$/.exec(
+		contentType
+	)?.[1];
+	assert.ok(boundary, contentType);
+	assert.ok(upload.body.includes(`--${boundary}`));
+	assert.ok(upload.body.includes('filename="pic.png"'));
+	assert.ok(upload.body.includes("A".repeat(5000)));
+	assert.ok(upload.body.includes('name="client_upload_id"'));
+	results.push("file upload keeps its content and multipart boundary");
 	await crossFromForeignShell();
 	await reset();
 	await page.frameLocator("#app > iframe").locator("#nested").click();
