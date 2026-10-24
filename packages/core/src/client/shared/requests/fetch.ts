@@ -68,14 +68,17 @@ export default function (client: ScramjetClient) {
 			const init = ctx.args[1] as RequestInit | undefined;
 			ctx.args[0] = client.rewriteUrl(url, rewriteUrlOptionsForFetch(init));
 
-			if (init && hasFiles(init.body)) {
+			const body = init?.body;
+			if (init && hasFiles(body)) {
 				// fetch reads its options when it is called, so take them now, before
 				// the body is serialized and the caller can change them.
 				const options: Record<string, unknown> = {};
 				for (const key of REQUEST_INIT_KEYS) {
-					if (key in init) options[key] = init[key as keyof RequestInit];
+					if (key !== "body" && key in init)
+						options[key] = init[key as keyof RequestInit];
 				}
-				const form = options.body as FormData;
+				// the body getter may only be read once
+				const form = body;
 				ctx.return(
 					(async () => {
 						// built here so invalid headers reject the promise like native fetch
