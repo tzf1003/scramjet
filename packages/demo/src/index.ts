@@ -112,15 +112,19 @@ async function main() {
 	const assetOrigin = import.meta.env.VITE_ASSET_ORIGIN
 		? new URL(import.meta.env.VITE_ASSET_ORIGIN).origin
 		: "";
+	const assetVersion = import.meta.env.VITE_ASSET_VERSION
+		? "?v=" + encodeURIComponent(import.meta.env.VITE_ASSET_VERSION)
+		: "";
 	const controller = new Controller({
 		serviceworker,
 		// With a shared asset host the runtime files load from one fixed URL, so
 		// the browser cache serves them to every proxied hostname.
 		config: assetOrigin
 			? {
-					scramjetPath: assetOrigin + "/scramjet/scramjet.js",
-					injectPath: assetOrigin + "/controller/controller.inject.js",
-					wasmPath: assetOrigin + "/scramjet/scramjet.wasm",
+					scramjetPath: assetOrigin + "/scramjet/scramjet.js" + assetVersion,
+					injectPath:
+						assetOrigin + "/controller/controller.inject.js" + assetVersion,
+					wasmPath: assetOrigin + "/scramjet/scramjet.wasm" + assetVersion,
 				}
 			: undefined,
 		transport: new LibcurlClient({ wisp: wispUrl.href }),

@@ -18,6 +18,11 @@ export default defineConfig(({ mode }) => {
 	const assetOrigin = env.VITE_ASSET_ORIGIN
 		? new URL(env.VITE_ASSET_ORIGIN).origin
 		: "";
+	// Appended to the runtime script URLs so a new build is never served from a
+	// cache that holds the previous file under the same name.
+	const assetVersion = env.VITE_ASSET_VERSION
+		? "?v=" + encodeURIComponent(env.VITE_ASSET_VERSION)
+		: "";
 	const externalBuild = existsSync("/Volumes/1T")
 		? "/Volumes/1T/scramjet/build/demo"
 		: undefined;
@@ -60,7 +65,7 @@ export default defineConfig(({ mode }) => {
 						// asset host allows for any origin.
 						return html.replace(
 							/<script src="\/((?:scramjet|controller)\/[^"]+)">/g,
-							`<script crossorigin src="${assetOrigin}/$1">`
+							`<script crossorigin src="${assetOrigin}/$1${assetVersion}">`
 						);
 					},
 				},
