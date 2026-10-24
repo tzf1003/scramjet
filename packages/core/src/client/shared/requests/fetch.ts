@@ -76,9 +76,10 @@ export default function (client: ScramjetClient) {
 					if (key in init) options[key] = init[key as keyof RequestInit];
 				}
 				const form = options.body as FormData;
-				const headers = new NativeHeaders(options.headers as HeadersInit);
 				ctx.return(
 					(async () => {
+						// built here so invalid headers reject the promise like native fetch
+						const headers = new NativeHeaders(options.headers as HeadersInit);
 						const serialized = new NativeResponse(form);
 						headers.set(
 							"content-type",
