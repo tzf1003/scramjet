@@ -148,6 +148,45 @@ async function crossFromForeignShell() {
 }
 try {
 	await reset();
+	const frame = await (
+		await page.locator("#app > iframe").elementHandle()
+	).contentFrame();
+	const uploadOffset = requests.length;
+	await frame.evaluate(async () => {
+		const form = new FormData();
+		form.append(
+			"file",
+			new File(["A".repeat(5000)], "pic.png", { type: "image/png" })
+		);
+		form.append("client_upload_id", "abc");
+		const res = await fetch("/upload", { method: "POST", body: form });
+		await res.text();
+	});
+	const upload = requests
+		.slice(uploadOffset)
+		.find((r) => r.url === "https://www.example.com/upload");
+	assert.ok(upload, "file upload requested");
+	const contentType = upload.headers.find(
+		([k]) => k.toLowerCase() === "content-type"
+	)[1];
+	const boundary = /^multipart\/form-data; boundary=(.+)$/.exec(
+		contentType
+	)?.[1];
+	assert.ok(boundary, contentType);
+	assert.ok(upload.body.includes(`--${boundary}`));
+	assert.ok(upload.body.includes('filename="pic.png"'));
+	assert.ok(
+		upload.body.includes("A".repeat(5000)),
+		`file content missing from ${upload.body.length} byte body`
+	);
+	assert.ok(upload.body.includes('name="client_upload_id"'));
+	results.push("file upload keeps its content and multipart boundary");
+	if (process.env.SCRAMJET_NAVIGATION_FOCUS === "upload") {
+		console.log(JSON.stringify({ results, errors }, null, 2));
+		await browser.close();
+		await vite.close();
+		process.exit(0);
+	}
 	await page.frameLocator("#app > iframe").locator("#cross").click();
 	await page.waitForURL(
 		`http://accounts-example-com.localhost:${port}/login?next=%2Fhome#part`
@@ -220,36 +259,6 @@ try {
 		)
 	);
 	results.push("cross-host POST retains body and controller");
-	const frame = await (
-		await page.locator("#app > iframe").elementHandle()
-	).contentFrame();
-	const uploadOffset = requests.length;
-	await frame.evaluate(async () => {
-		const form = new FormData();
-		form.append(
-			"file",
-			new File(["A".repeat(5000)], "pic.png", { type: "image/png" })
-		);
-		form.append("client_upload_id", "abc");
-		const res = await fetch("/upload", { method: "POST", body: form });
-		await res.text();
-	});
-	const upload = requests
-		.slice(uploadOffset)
-		.find((r) => r.url === "https://unrelated.test/upload");
-	assert.ok(upload, "file upload requested");
-	const contentType = upload.headers.find(
-		([k]) => k.toLowerCase() === "content-type"
-	)[1];
-	const boundary = /^multipart\/form-data; boundary=(.+)$/.exec(
-		contentType
-	)?.[1];
-	assert.ok(boundary, contentType);
-	assert.ok(upload.body.includes(`--${boundary}`));
-	assert.ok(upload.body.includes('filename="pic.png"'));
-	assert.ok(upload.body.includes("A".repeat(5000)));
-	assert.ok(upload.body.includes('name="client_upload_id"'));
-	results.push("file upload keeps its content and multipart boundary");
 	await crossFromForeignShell();
 	await reset();
 	await page.frameLocator("#app > iframe").locator("#nested").click();
