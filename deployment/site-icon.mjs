@@ -18,8 +18,10 @@ export const ICON_PATHS = new Set([
 const MAX_ICON_BYTES = 256 * 1024;
 const MAX_HTML_BYTES = 256 * 1024;
 const MAX_REDIRECTS = 3;
-const MAX_CANDIDATES = 4;
+const MAX_DECLARED = 3;
 const FETCH_TIMEOUT = 5000;
+// Wall-clock budget for one lookup: page, redirects and every candidate.
+const LOOKUP_DEADLINE = 10000;
 const MAX_CONCURRENT = 16;
 const CACHE_ENTRIES = 500;
 const HIT_TTL = 3600_000;
@@ -140,7 +142,8 @@ function safeLookup(hostname, options, callback) {
 	});
 }
 
-function get(url, limit, accept, redirects = MAX_REDIRECTS) {
+function get(url, limit, accept, deadline, redirects = MAX_REDIRECTS) {
+	let timer;
 	return new Promise((resolve, reject) => {
 		let target;
 		try {
@@ -156,11 +159,13 @@ function get(url, limit, accept, redirects = MAX_REDIRECTS) {
 			!validTarget(target.hostname)
 		)
 			return reject(new Error("denied"));
+		const remaining = deadline - Date.now();
+		if (remaining <= 0) return reject(new Error("timeout"));
 		const request = https.get(
 			target,
 			{
 				lookup: safeLookup,
-				timeout: FETCH_TIMEOUT,
+				timeout: Math.min(FETCH_TIMEOUT, remaining),
 				headers: {
 					accept,
 					"accept-encoding": "identity",
@@ -178,6 +183,7 @@ function get(url, limit, accept, redirects = MAX_REDIRECTS) {
 							new URL(response.headers.location, target).href,
 							limit,
 							accept,
+							deadline,
 							redirects - 1
 						)
 					);
@@ -212,11 +218,15 @@ function get(url, limit, accept, redirects = MAX_REDIRECTS) {
 					})
 				);
 				response.on("error", reject);
+				response.on("close", () => reject(new Error("aborted")));
 			}
 		);
+		// The socket timeout only covers inactivity, so a trickling response
+		// needs this hard stop.
+		timer = setTimeout(() => request.destroy(new Error("timeout")), remaining);
 		request.on("timeout", () => request.destroy(new Error("timeout")));
 		request.on("error", reject);
-	});
+	}).finally(() => clearTimeout(timer));
 }
 
 function sniff(body) {
@@ -234,8 +244,13 @@ function sniff(body) {
 	return null;
 }
 
-async function fetchIcon(url) {
-	const { body, type } = await get(url, MAX_ICON_BYTES, "image/*,*/*;q=0.5");
+async function fetchIcon(url, deadline) {
+	const { body, type } = await get(
+		url,
+		MAX_ICON_BYTES,
+		"image/*,*/*;q=0.5",
+		deadline
+	);
 	if (!body.length) throw new Error("empty");
 	// Servers often label a favicon text/plain or octet-stream, so trust the
 	// bytes. Anything that is neither a known image type nor an image fails.
@@ -250,16 +265,21 @@ async function fetchIcon(url) {
 }
 
 async function discover(host, apple) {
+	const deadline = Date.now() + LOOKUP_DEADLINE;
 	const candidates = [];
 	try {
 		const page = await get(
 			`https://${host}/`,
 			MAX_HTML_BYTES,
-			"text/html,application/xhtml+xml"
+			"text/html,application/xhtml+xml",
+			deadline
 		);
 		if (/html/.test(page.type) || !page.type)
 			candidates.push(
-				...declaredIcons(page.body.toString("utf8"), page.url, apple)
+				...declaredIcons(page.body.toString("utf8"), page.url, apple).slice(
+					0,
+					MAX_DECLARED
+				)
 			);
 	} catch {
 		// A site that blocks the page request can still serve its icon file.
@@ -270,9 +290,11 @@ async function discover(host, apple) {
 			`https://${host}/apple-touch-icon-precomposed.png`
 		);
 	else candidates.push(`https://${host}/favicon.ico`);
-	for (const candidate of [...new Set(candidates)].slice(0, MAX_CANDIDATES)) {
+	// The conventional paths follow the declared ones, so the declared cap
+	// never crowds them out.
+	for (const candidate of new Set(candidates)) {
 		try {
-			return await fetchIcon(candidate);
+			return await fetchIcon(candidate, deadline);
 		} catch {
 			// Try the next declared location.
 		}

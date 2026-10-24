@@ -8,7 +8,13 @@ const LINKS: Array<[string, string]> = [
 	['link[rel="apple-touch-icon"]', "apple"],
 ];
 
+// The gateway only fetches icons from https on the default port, so any other
+// origin would show the icon of a different service on that hostname.
+const NO_ICON = "data:,";
+
 export function siteIconHref(target: URL, kind: "icon" | "apple"): string {
+	if (target.protocol !== "https:" || (target.port && target.port !== "443"))
+		return NO_ICON;
 	const url = new URL(SITE_ICON_PATH, "https://shell.invalid");
 	url.searchParams.set("host", target.hostname);
 	if (kind === "apple") url.searchParams.set("kind", "apple");
