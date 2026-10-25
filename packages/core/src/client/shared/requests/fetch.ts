@@ -69,28 +69,31 @@ async function readCapped(request: Request): Promise<ArrayBuffer | null> {
 	return out.buffer;
 }
 
-export default function (client: ScramjetClient) {
-	/**
-	 * Whether `body` is a FormData holding files. Safari does not deliver the file
-	 * parts of such a body to the service worker (the upload arrives with an empty
-	 * file), so the page serializes it itself before the request leaves.
-	 */
-	function hasFiles(body: unknown): body is FormData {
-		if (!client.box.instanceof(body, "FormData")) return false;
-		let size = 0;
-		let files = false;
-		for (const entry of (body as FormData).values()) {
-			if (client.box.instanceof(entry, "Blob")) {
-				files = true;
-				size += (entry as Blob).size;
-			} else {
-				// text fields are buffered too; their length is a lower bound
-				size += String(entry).length;
-			}
+/**
+ * Whether `body` is a FormData holding files. Safari does not deliver the file
+ * parts of such a body to the service worker (the upload arrives with an empty
+ * file), so the page serializes it itself before the request leaves.
+ */
+export function hasFiles(
+	client: ScramjetClient,
+	body: unknown
+): body is FormData {
+	if (!client.box.instanceof(body, "FormData")) return false;
+	let size = 0;
+	let files = false;
+	for (const entry of (body as FormData).values()) {
+		if (client.box.instanceof(entry, "Blob")) {
+			files = true;
+			size += (entry as Blob).size;
+		} else {
+			// text fields are buffered too; their length is a lower bound
+			size += String(entry).length;
 		}
-		return files && size <= MAX_FLATTENED_BODY;
 	}
+	return files && size <= MAX_FLATTENED_BODY;
+}
 
+export default function (client: ScramjetClient) {
 	client.Proxy("fetch", {
 		apply(ctx) {
 			const input = ctx.args[0];
@@ -120,7 +123,7 @@ export default function (client: ScramjetClient) {
 			ctx.args[0] = client.rewriteUrl(url, rewriteUrlOptionsForFetch(init));
 
 			const body = init?.body;
-			if (init && hasFiles(body)) {
+			if (init && hasFiles(client, body)) {
 				// fetch reads its options when it is called, so take them now, before
 				// the body is serialized and the caller can change them.
 				const options: Record<string, unknown> = {};

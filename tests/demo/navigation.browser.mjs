@@ -180,6 +180,19 @@ try {
 			new Request("/upload", { method: "POST", body: form2 })
 		);
 		await res2.text();
+		// and uploads with progress events go through XMLHttpRequest
+		const form3 = new FormData();
+		form3.append(
+			"file",
+			new File(["C".repeat(5000)], "pic3.png", { type: "image/png" })
+		);
+		await new Promise((resolve, reject) => {
+			const xhr = new XMLHttpRequest();
+			xhr.open("POST", "/upload");
+			xhr.onload = resolve;
+			xhr.onerror = reject;
+			xhr.send(form3);
+		});
 	});
 	const upload = requests
 		.slice(uploadOffset)
@@ -206,6 +219,14 @@ try {
 	assert.ok(
 		upload2.body.includes("B".repeat(5000)),
 		`Request file content missing from ${upload2.body.length} byte body`
+	);
+	const upload3 = requests
+		.slice(uploadOffset)
+		.filter((r) => r.url === "https://www.example.com/upload")[2];
+	assert.ok(upload3, "XHR upload requested");
+	assert.ok(
+		upload3.body.includes("C".repeat(5000)),
+		`XHR file content missing from ${upload3.body.length} byte body`
 	);
 	results.push("file upload keeps its content and multipart boundary");
 	if (process.env.SCRAMJET_NAVIGATION_FOCUS === "upload") {

@@ -2,6 +2,7 @@ import {
 	NativeDataView,
 	NativeError,
 	NativeRegExp,
+	NativeResponse,
 	NativeSharedArrayBuffer,
 	NativeSymbol,
 	NativeTextDecoder,
@@ -12,6 +13,7 @@ import {
 import { ScramjetContext } from "@/shared";
 import { rewriteUrl, unrewriteUrl, URLMeta } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
+import { hasFiles } from "./fetch";
 
 export default function (client: ScramjetClient, self: Self) {
 	const { DOMParser: NativeDOMParser } = self;
@@ -40,6 +42,26 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Proxy("XMLHttpRequest.prototype.send", {
 		apply(ctx) {
 			const args = ctx.this[ARGS];
+			if (args && args[2] && hasFiles(client, ctx.args[0])) {
+				// Safari drops the file parts of a FormData sent from a page to the
+				// service worker, so send the serialized bytes instead
+				const xhr = ctx.this as XMLHttpRequest;
+				const form = ctx.args[0] as FormData;
+				ctx.return(undefined);
+				(async () => {
+					const serialized = new NativeResponse(form);
+					const type = serialized.headers.get("content-type") as string;
+					ctx.args[0] = await serialized.arrayBuffer();
+					xhr.setRequestHeader("content-type", type);
+				})().then(
+					() => ctx.call(),
+					() => {
+						ctx.args[0] = form;
+						ctx.call();
+					}
+				);
+				return;
+			}
 			if (!args || args[2]) return;
 
 			if (!client.flagEnabled("syncxhr")) {
