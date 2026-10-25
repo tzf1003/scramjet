@@ -59,7 +59,7 @@ async function readCapped(request: Request): Promise<ArrayBuffer | null> {
 		}
 		chunks.push(value);
 	}
-	const out = new Uint8Array(size);
+	const out = new NativeUint8Array(size);
 	let offset = 0;
 	for (const chunk of chunks) {
 		out.set(chunk, offset);
