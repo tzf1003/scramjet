@@ -30,6 +30,9 @@ export default function (client: ScramjetClient, self: Self) {
 			if (ctx.args[1]) ctx.args[1] = client.rewriteUrl(ctx.args[1]);
 			if (ctx.args[2] === undefined) ctx.args[2] = true;
 			ctx.this[ARGS] = ctx.args;
+			// open() starts a new request: its headers and any pending send are gone
+			ctx.this[HEADERS] = undefined;
+			ctx.this[PENDING] = null;
 		},
 	});
 
@@ -43,7 +46,7 @@ export default function (client: ScramjetClient, self: Self) {
 	client.Proxy("XMLHttpRequest.prototype.abort", {
 		apply(ctx) {
 			// a send still waiting on its serialized body is cancelled too
-			ctx.this[PENDING] = false;
+			ctx.this[PENDING] = null;
 		},
 	});
 
@@ -60,25 +63,27 @@ export default function (client: ScramjetClient, self: Self) {
 				for (const name in headers) {
 					if (name.toLowerCase() === "content-type") hasType = true;
 				}
-				ctx.this[PENDING] = true;
+				// one token per send, so a stale serialization cannot fire a newer request
+				const token = {};
+				ctx.this[PENDING] = token;
 				ctx.return(undefined);
 				(async () => {
 					const serialized = new NativeResponse(form);
 					const type = serialized.headers.get("content-type") as string;
 					ctx.args[0] = await serialized.arrayBuffer();
 					// an explicit Content-Type wins, as it does for a native FormData body
-					if (ctx.this[PENDING] && !hasType) {
+					if (ctx.this[PENDING] === token && !hasType) {
 						xhr.setRequestHeader("content-type", type);
 					}
 				})().then(
 					() => {
-						if (!ctx.this[PENDING]) return;
-						ctx.this[PENDING] = false;
+						if (ctx.this[PENDING] !== token) return;
+						ctx.this[PENDING] = null;
 						ctx.call();
 					},
 					() => {
-						if (!ctx.this[PENDING]) return;
-						ctx.this[PENDING] = false;
+						if (ctx.this[PENDING] !== token) return;
+						ctx.this[PENDING] = null;
 						ctx.args[0] = form;
 						ctx.call();
 					}
