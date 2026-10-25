@@ -53,7 +53,8 @@ async function readCapped(request: Request): Promise<ArrayBuffer | null> {
 		if (done) break;
 		size += value.byteLength;
 		if (size > MAX_FLATTENED_BODY) {
-			await reader.cancel();
+			// the clone is a tee branch: cancel only settles once the original is consumed too
+			void reader.cancel().catch(() => {});
 			return null;
 		}
 		chunks.push(value);
