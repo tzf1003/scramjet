@@ -3,7 +3,14 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "vite";
-import { chromium } from "../../packages/runway/node_modules/playwright/index.mjs";
+import {
+	chromium,
+	firefox,
+	webkit,
+} from "../../packages/runway/node_modules/playwright/index.mjs";
+const engineName = process.env.SCRAMJET_TEST_BROWSER || "chromium";
+const engine = { chromium, firefox, webkit }[engineName];
+assert.ok(engine, `unknown SCRAMJET_TEST_BROWSER ${engineName}`);
 
 const root = resolve(import.meta.dirname, "../..");
 const out =
@@ -103,8 +110,10 @@ const vite = await createServer({
 });
 await vite.listen();
 const port = vite.httpServer.address().port;
-const browser = await chromium.launch({
-	channel: process.env.BROWSER_CHANNEL || "chrome",
+const browser = await engine.launch({
+	...(engineName === "chromium" && {
+		channel: process.env.BROWSER_CHANNEL || "chrome",
+	}),
 	headless: true,
 });
 const context = await browser.newContext();

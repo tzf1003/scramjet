@@ -1,0 +1,117 @@
+name: WebKit
+
+# Runs the browser integration tests on Playwright's WebKit build, which is the
+# engine behind Safari (including iPhone). Chromium is covered by CI and
+# Firefox/WebKit WebRTC by the WebRTC workflow.
+on:
+  push:
+    paths-ignore: &webkit_ignore_paths
+      - ".zed/**"
+      - ".vscode/**"
+      - "README.md"
+      # Formatters
+      - ".editorconfig"
+      - "eslint.config.json"
+      - "prettier.config.json"
+  pull_request:
+    paths-ignore: *webkit_ignore_paths
+  workflow_dispatch:
+
+env:
+  WASM_BINDGEN_VERSION: "0.2.105"
+  SCRAMJET_TEST_BROWSER: webkit
+  CACHE_BROWSER: webkit
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  webkit:
+    name: WebKit browser tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Setup Rewriter Toolchain
+        uses: ./.github/actions/setup-rewriter-toolchain
+        with:
+          wasm-bindgen-version: ${{ env.WASM_BINDGEN_VERSION }}
+          rewriter-path: packages/core/rewriter
+          github-token: ${{ github.token }}
+
+      - name: Build Scramjet
+        env:
+          RELEASE: "1"
+        run: |
+          pnpm --dir packages/core run rewriter:build
+          pnpm exec rspack build --mode production
+
+      - name: Install Playwright WebKit
+        run: pnpm --dir packages/runway exec playwright install --with-deps webkit
+
+      - name: Test file upload through the proxy
+        run: pnpm test:navigation
+        working-directory: packages/demo
+        env:
+          SCRAMJET_NAVIGATION_FOCUS: upload
+          SCRAMJET_NAVIGATION_OUTPUT: ${{ runner.temp }}/scramjet-navigation-webkit-upload
+
+      # The cross-host cookie handoff fails on WebKit (the destination request
+      # carries no cookies), so this full run reports but does not block yet.
+      - name: Test proxy browser navigation
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: pnpm test:navigation
+        working-directory: packages/demo
+        env:
+          SCRAMJET_NAVIGATION_OUTPUT: ${{ runner.temp }}/scramjet-navigation-webkit
+
+      - name: Upload navigation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-navigation
+          path: |
+            ${{ runner.temp }}/scramjet-navigation-webkit
+            ${{ runner.temp }}/scramjet-navigation-webkit-upload
+
+      - name: Test browser resource cache
+        if: ${{ !cancelled() }}
+        run: node tests/cache/storage.browser.mjs && node tests/cache/proxy.browser.mjs
+        env:
+          SCRAMJET_CACHE_OUTPUT: ${{ runner.temp }}/scramjet-cache-webkit
+
+      - name: Build Frontend
+        if: ${{ !cancelled() }}
+        run: pnpm build
+        working-directory: packages/demo
+
+      - name: Test portal navigation
+        if: ${{ !cancelled() }}
+        run: node tests/cache/portal.browser.mjs
+        env:
+          SCRAMJET_CACHE_OUTPUT: ${{ runner.temp }}/scramjet-cache-webkit
+
+      - name: Upload cache test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-cache
+          path: ${{ runner.temp }}/scramjet-cache-webkit
