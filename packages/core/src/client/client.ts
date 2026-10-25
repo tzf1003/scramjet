@@ -634,6 +634,7 @@ export class ScramjetClient {
 		);
 
 		this.global.location.href = this.rewriteUrl(url, {
+			...this.navigationRewriteOptions(),
 			navigateType: "location",
 		});
 	}
@@ -944,6 +945,31 @@ return { apply, construct };
 			desc.configurable = oldDescriptor.configurable;
 
 		Object_defineProperty(target, prop, desc);
+	}
+
+	/**
+	 * Rewrite options for navigating this window. The controller frame stands
+	 * in for a top-level browsing context, so only a window nested inside
+	 * another proxied page navigates as an iframe.
+	 */
+	navigationRewriteOptions(): RewriteUrlOptions {
+		if (!iswindow) return {};
+
+		let nested: boolean;
+		try {
+			const parent = this.global.parent.window;
+			nested = parent !== this.global.window && !!parent[SCRAMJETCLIENT];
+		} catch {
+			// an opaque-origin parent can only be a sandboxed proxied page
+			nested = true;
+		}
+		if (!nested) return {};
+
+		return {
+			isIframe: "1",
+			topFrame: this.meta.topFrameName,
+			parentFrame: this.meta.parentFrameName,
+		};
 	}
 
 	rewriteUrl(url: string | URL, options?: RewriteUrlOptions): string {

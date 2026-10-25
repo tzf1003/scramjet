@@ -23,6 +23,21 @@ const frameTest = (name: string, js: string) =>
 					);
 					return;
 				}
+				if (path === "/dest") {
+					// echo what the frame's navigation claimed to be
+					res.writeHead(200, { "Content-Type": "text/html" });
+					res.end(
+						'<!DOCTYPE html><html><body><pre id="d">' +
+							(req.headers["sec-fetch-dest"] ?? "none") +
+							"</pre></body></html>"
+					);
+					return;
+				}
+				if (path === "/to-dest") {
+					res.writeHead(302, { Location: "/dest" });
+					res.end();
+					return;
+				}
 				if (path === "/nested.html") {
 					res.writeHead(200, { "Content-Type": "text/html" });
 					res.end(
@@ -39,6 +54,37 @@ const frameTest = (name: string, js: string) =>
 const LOAD = `const load = (f) => new Promise((r) => { f.onload = r; setTimeout(r, 4000); });`;
 
 export default [
+	// Claude's artifact frames go /_t (sets the cookie) -> 302 -> /_f, and send
+	// any /_f load that claims to be a top-level document to the full page
+	frameTest(
+		"frames-redirect-keeps-iframe-dest",
+		`
+			${LOAD}
+			const f = document.createElement("iframe");
+			f.src = "/to-dest";
+			document.body.appendChild(f);
+			await load(f);
+			const d = f.contentDocument.querySelector("#d");
+			assert(d, "redirected frame loaded");
+			assertEqual(d.textContent, "iframe", "Sec-Fetch-Dest after a redirect");
+		`
+	),
+	frameTest(
+		"frames-location-replace-keeps-iframe-dest",
+		`
+			${LOAD}
+			const f = document.createElement("iframe");
+			f.src = "/frame.html";
+			document.body.appendChild(f);
+			await load(f);
+			const loaded = load(f);
+			f.contentWindow.location.replace("/dest");
+			await loaded;
+			const d = f.contentDocument.querySelector("#d");
+			assert(d, "replaced frame loaded");
+			assertEqual(d.textContent, "iframe", "Sec-Fetch-Dest after location.replace");
+		`
+	),
 	frameTest(
 		"frames-contentdocument-urls",
 		`

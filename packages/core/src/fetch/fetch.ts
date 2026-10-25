@@ -50,7 +50,11 @@ export async function doHandleFetch(
 	}
 
 	if (parsed.hadExtraParams && isDocument(parsed)) {
-		const location = rewriteUrl(parsed.url, handler.context, parsed.meta);
+		const location = rewriteUrl(parsed.url, handler.context, parsed.meta, {
+			isIframe: parsed.isIframe ? "1" : undefined,
+			topFrame: parsed.meta.topFrameName,
+			parentFrame: parsed.meta.parentFrameName,
+		});
 		if (location !== request.rawUrl.href) {
 			const responseHeaders = new ScramjetHeaders();
 			responseHeaders.set("location", location);
@@ -145,6 +149,14 @@ export async function doHandleFetch(
 		if (initiatorOriginUrl)
 			location.searchParams.set(QP.initiatorOrigin, initiatorOriginUrl.origin);
 		if (parsed.isModule) location.searchParams.set(QP.isModule, "module");
+		// without the iframe flag the next hop is sent as a top-level navigation
+		// (Sec-Fetch-Dest: document), and sites like Claude's artifact frames
+		// answer that by bouncing to their full-page view
+		if (parsed.isIframe) location.searchParams.set(QP.isIframe, "1");
+		if (parsed.meta.topFrameName)
+			location.searchParams.set(QP.topFrame, parsed.meta.topFrameName);
+		if (parsed.meta.parentFrameName)
+			location.searchParams.set(QP.parentFrame, parsed.meta.parentFrameName);
 
 		responseHeaders.set("location", location.href);
 	}
