@@ -96,7 +96,10 @@ export function createLocationProxy(client: ScramjetClient, self: GlobalThis) {
 	if (self.location.assign)
 		fakeLocation.assign = new Proxy(self.location.assign, {
 			apply(target, that, args) {
-				args[0] = client.rewriteUrl(args[0]);
+				args[0] = client.rewriteUrl(
+					args[0],
+					client.navigationRewriteOptions()
+				);
 				Reflect_apply(target, self.location, args);
 				Tap.dispatch(
 					client.hooks.lifecycle.navigate,
@@ -118,7 +121,10 @@ export function createLocationProxy(client: ScramjetClient, self: GlobalThis) {
 	if (self.location.replace)
 		fakeLocation.replace = new Proxy(self.location.replace, {
 			apply(target, that, args) {
-				args[0] = client.rewriteUrl(args[0]);
+				args[0] = client.rewriteUrl(
+					args[0],
+					client.navigationRewriteOptions()
+				);
 				Reflect_apply(target, self.location, args);
 
 				Tap.dispatch(
