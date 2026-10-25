@@ -2,6 +2,7 @@ import {
 	NativeHeaders,
 	NativeRequest,
 	NativeResponse,
+	NativeUint8Array,
 } from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./xmlhttprequest";
