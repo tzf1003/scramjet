@@ -2,6 +2,7 @@ import {
 	NativeDataView,
 	NativeError,
 	NativeRegExp,
+	NativeResponse,
 	NativeSharedArrayBuffer,
 	NativeSymbol,
 	NativeTextDecoder,
@@ -12,6 +13,7 @@ import {
 import { ScramjetContext } from "@/shared";
 import { rewriteUrl, unrewriteUrl, URLMeta } from "@rewriters/url";
 import { ScramjetClient } from "@client/index";
+import { hasFiles } from "./fetch";
 
 export default function (client: ScramjetClient, self: Self) {
 	const { DOMParser: NativeDOMParser } = self;
@@ -21,12 +23,16 @@ export default function (client: ScramjetClient, self: Self) {
 	// }
 	const ARGS = NativeSymbol("xhr original args");
 	const HEADERS = NativeSymbol("xhr headers");
+	const PENDING = NativeSymbol("xhr pending file send");
 
 	client.Proxy("XMLHttpRequest.prototype.open", {
 		apply(ctx) {
 			if (ctx.args[1]) ctx.args[1] = client.rewriteUrl(ctx.args[1]);
 			if (ctx.args[2] === undefined) ctx.args[2] = true;
 			ctx.this[ARGS] = ctx.args;
+			// open() starts a new request: its headers and any pending send are gone
+			ctx.this[HEADERS] = undefined;
+			ctx.this[PENDING] = null;
 		},
 	});
 
@@ -37,9 +43,53 @@ export default function (client: ScramjetClient, self: Self) {
 		},
 	});
 
+	client.Proxy("XMLHttpRequest.prototype.abort", {
+		apply(ctx) {
+			// a send still waiting on its serialized body is cancelled too
+			ctx.this[PENDING] = null;
+		},
+	});
+
 	client.Proxy("XMLHttpRequest.prototype.send", {
 		apply(ctx) {
 			const args = ctx.this[ARGS];
+			if (args && args[2] && hasFiles(client, ctx.args[0])) {
+				// Safari drops the file parts of a FormData sent from a page to the
+				// service worker, so send the serialized bytes instead
+				const xhr = ctx.this as XMLHttpRequest;
+				const form = ctx.args[0] as FormData;
+				const headers = ctx.this[HEADERS] || {};
+				let hasType = false;
+				for (const name in headers) {
+					if (name.toLowerCase() === "content-type") hasType = true;
+				}
+				// one token per send, so a stale serialization cannot fire a newer request
+				const token = {};
+				ctx.this[PENDING] = token;
+				ctx.return(undefined);
+				(async () => {
+					const serialized = new NativeResponse(form);
+					const type = serialized.headers.get("content-type") as string;
+					ctx.args[0] = await serialized.arrayBuffer();
+					// an explicit Content-Type wins, as it does for a native FormData body
+					if (ctx.this[PENDING] === token && !hasType) {
+						xhr.setRequestHeader("content-type", type);
+					}
+				})().then(
+					() => {
+						if (ctx.this[PENDING] !== token) return;
+						ctx.this[PENDING] = null;
+						ctx.call();
+					},
+					() => {
+						if (ctx.this[PENDING] !== token) return;
+						ctx.this[PENDING] = null;
+						ctx.args[0] = form;
+						ctx.call();
+					}
+				);
+				return;
+			}
 			if (!args || args[2]) return;
 
 			if (!client.flagEnabled("syncxhr")) {

@@ -1,4 +1,9 @@
-import { NativeHeaders, NativeResponse } from "@/shared/snapshot";
+import {
+	NativeHeaders,
+	NativeRequest,
+	NativeResponse,
+	NativeUint8Array,
+} from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./xmlhttprequest";
 import { String } from "@/shared/snapshot";
@@ -39,37 +44,86 @@ const REQUEST_INIT_KEYS = [
 	"duplex",
 ];
 
-export default function (client: ScramjetClient) {
-	/**
-	 * Whether `body` is a FormData holding files. Safari does not deliver the file
-	 * parts of such a body to the service worker (the upload arrives with an empty
-	 * file), so the page serializes it itself before the request leaves.
-	 */
-	function hasFiles(body: unknown): body is FormData {
-		if (!client.box.instanceof(body, "FormData")) return false;
-		let size = 0;
-		let files = false;
-		for (const entry of (body as FormData).values()) {
-			if (client.box.instanceof(entry, "Blob")) {
-				files = true;
-				size += (entry as Blob).size;
-			} else {
-				// text fields are buffered too; their length is a lower bound
-				size += String(entry).length;
-			}
+/** Reads a body into memory, giving up (and releasing it) past the size limit. */
+async function readCapped(request: Request): Promise<ArrayBuffer | null> {
+	const reader = request.body!.getReader();
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > MAX_FLATTENED_BODY) {
+			// the clone is a tee branch: cancel only settles once the original is consumed too
+			void reader.cancel().catch(() => {});
+			return null;
 		}
-		return files && size <= MAX_FLATTENED_BODY;
+		chunks.push(value);
 	}
+	const out = new NativeUint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return out.buffer;
+}
 
+/**
+ * Whether `body` is a FormData holding files. Safari does not deliver the file
+ * parts of such a body to the service worker (the upload arrives with an empty
+ * file), so the page serializes it itself before the request leaves.
+ */
+export function hasFiles(
+	client: ScramjetClient,
+	body: unknown
+): body is FormData {
+	if (!client.box.instanceof(body, "FormData")) return false;
+	let size = 0;
+	let files = false;
+	for (const entry of (body as FormData).values()) {
+		if (client.box.instanceof(entry, "Blob")) {
+			files = true;
+			size += (entry as Blob).size;
+		} else {
+			// text fields are buffered too; their length is a lower bound
+			size += String(entry).length;
+		}
+	}
+	return files && size <= MAX_FLATTENED_BODY;
+}
+
+export default function (client: ScramjetClient) {
 	client.Proxy("fetch", {
 		apply(ctx) {
-			if (client.box.instanceof(ctx.args[0], "Request")) return;
+			const input = ctx.args[0];
+			if (client.box.instanceof(input, "Request")) {
+				// a Request built from a FormData loses its file parts in the same way
+				// (wrappers such as Datadog's turn fetch(url, init) into fetch(Request))
+				const request = input as Request;
+				const type = (request.headers.get("content-type") || "").toLowerCase();
+				if (
+					request.body &&
+					!request.bodyUsed &&
+					type.startsWith("multipart/form-data") &&
+					!(ctx.args[1] as RequestInit | undefined)?.body
+				) {
+					ctx.return(
+						(async () => {
+							const body = await readCapped(request.clone());
+							if (body) ctx.args[0] = new NativeRequest(request, { body });
+							return ctx.call();
+						})()
+					);
+				}
+				return;
+			}
 			const url = String(ctx.args[0]);
 			const init = ctx.args[1] as RequestInit | undefined;
 			ctx.args[0] = client.rewriteUrl(url, rewriteUrlOptionsForFetch(init));
 
 			const body = init?.body;
-			if (init && hasFiles(body)) {
+			if (init && hasFiles(client, body)) {
 				// fetch reads its options when it is called, so take them now, before
 				// the body is serialized and the caller can change them.
 				const options: Record<string, unknown> = {};
