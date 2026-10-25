@@ -43,6 +43,30 @@ const REQUEST_INIT_KEYS = [
 	"duplex",
 ];
 
+/** Reads a body into memory, giving up (and releasing it) past the size limit. */
+async function readCapped(request: Request): Promise<ArrayBuffer | null> {
+	const reader = request.body!.getReader();
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > MAX_FLATTENED_BODY) {
+			await reader.cancel();
+			return null;
+		}
+		chunks.push(value);
+	}
+	const out = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		out.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return out.buffer;
+}
+
 export default function (client: ScramjetClient) {
 	/**
 	 * Whether `body` is a FormData holding files. Safari does not deliver the file
@@ -72,20 +96,17 @@ export default function (client: ScramjetClient) {
 				// a Request built from a FormData loses its file parts in the same way
 				// (wrappers such as Datadog's turn fetch(url, init) into fetch(Request))
 				const request = input as Request;
-				const type = request.headers.get("content-type") || "";
+				const type = (request.headers.get("content-type") || "").toLowerCase();
 				if (
 					request.body &&
 					!request.bodyUsed &&
 					type.startsWith("multipart/form-data") &&
-					!ctx.args[1]
+					!(ctx.args[1] as RequestInit | undefined)?.body
 				) {
 					ctx.return(
 						(async () => {
-							const body = await request.clone().arrayBuffer();
-							if (body.byteLength > MAX_FLATTENED_BODY) {
-								return ctx.call();
-							}
-							ctx.args[0] = new NativeRequest(request, { body });
+							const body = await readCapped(request.clone());
+							if (body) ctx.args[0] = new NativeRequest(request, { body });
 							return ctx.call();
 						})()
 					);
