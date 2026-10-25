@@ -1,4 +1,8 @@
-import { NativeHeaders, NativeResponse } from "@/shared/snapshot";
+import {
+	NativeHeaders,
+	NativeRequest,
+	NativeResponse,
+} from "@/shared/snapshot";
 import { ScramjetClient } from "@client/index";
 import { unrewriteLinkHeader } from "./xmlhttprequest";
 import { String } from "@/shared/snapshot";
@@ -63,7 +67,31 @@ export default function (client: ScramjetClient) {
 
 	client.Proxy("fetch", {
 		apply(ctx) {
-			if (client.box.instanceof(ctx.args[0], "Request")) return;
+			const input = ctx.args[0];
+			if (client.box.instanceof(input, "Request")) {
+				// a Request built from a FormData loses its file parts in the same way
+				// (wrappers such as Datadog's turn fetch(url, init) into fetch(Request))
+				const request = input as Request;
+				const type = request.headers.get("content-type") || "";
+				if (
+					request.body &&
+					!request.bodyUsed &&
+					type.startsWith("multipart/form-data") &&
+					!ctx.args[1]
+				) {
+					ctx.return(
+						(async () => {
+							const body = await request.clone().arrayBuffer();
+							if (body.byteLength > MAX_FLATTENED_BODY) {
+								return ctx.call();
+							}
+							ctx.args[0] = new NativeRequest(request, { body });
+							return ctx.call();
+						})()
+					);
+				}
+				return;
+			}
 			const url = String(ctx.args[0]);
 			const init = ctx.args[1] as RequestInit | undefined;
 			ctx.args[0] = client.rewriteUrl(url, rewriteUrlOptionsForFetch(init));

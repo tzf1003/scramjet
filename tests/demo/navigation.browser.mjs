@@ -170,6 +170,16 @@ try {
 		form.append("client_upload_id", "abc");
 		const res = await fetch("/upload", { method: "POST", body: form });
 		await res.text();
+		// wrappers such as Datadog's hand fetch a ready-made Request instead
+		const form2 = new FormData();
+		form2.append(
+			"file",
+			new File(["B".repeat(5000)], "pic2.png", { type: "image/png" })
+		);
+		const res2 = await fetch(
+			new Request("/upload", { method: "POST", body: form2 })
+		);
+		await res2.text();
 	});
 	const upload = requests
 		.slice(uploadOffset)
@@ -189,6 +199,14 @@ try {
 		`file content missing from ${upload.body.length} byte body`
 	);
 	assert.ok(upload.body.includes('name="client_upload_id"'));
+	const upload2 = requests
+		.slice(uploadOffset)
+		.filter((r) => r.url === "https://www.example.com/upload")[1];
+	assert.ok(upload2, "Request upload requested");
+	assert.ok(
+		upload2.body.includes("B".repeat(5000)),
+		`Request file content missing from ${upload2.body.length} byte body`
+	);
 	results.push("file upload keeps its content and multipart boundary");
 	if (process.env.SCRAMJET_NAVIGATION_FOCUS === "upload") {
 		console.log(JSON.stringify({ results, errors }, null, 2));
