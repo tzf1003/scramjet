@@ -23,6 +23,7 @@ export default function (client: ScramjetClient, self: Self) {
 	// }
 	const ARGS = NativeSymbol("xhr original args");
 	const HEADERS = NativeSymbol("xhr headers");
+	const PENDING = NativeSymbol("xhr pending file send");
 
 	client.Proxy("XMLHttpRequest.prototype.open", {
 		apply(ctx) {
@@ -39,6 +40,13 @@ export default function (client: ScramjetClient, self: Self) {
 		},
 	});
 
+	client.Proxy("XMLHttpRequest.prototype.abort", {
+		apply(ctx) {
+			// a send still waiting on its serialized body is cancelled too
+			ctx.this[PENDING] = false;
+		},
+	});
+
 	client.Proxy("XMLHttpRequest.prototype.send", {
 		apply(ctx) {
 			const args = ctx.this[ARGS];
@@ -47,15 +55,30 @@ export default function (client: ScramjetClient, self: Self) {
 				// service worker, so send the serialized bytes instead
 				const xhr = ctx.this as XMLHttpRequest;
 				const form = ctx.args[0] as FormData;
+				const headers = ctx.this[HEADERS] || {};
+				let hasType = false;
+				for (const name in headers) {
+					if (name.toLowerCase() === "content-type") hasType = true;
+				}
+				ctx.this[PENDING] = true;
 				ctx.return(undefined);
 				(async () => {
 					const serialized = new NativeResponse(form);
 					const type = serialized.headers.get("content-type") as string;
 					ctx.args[0] = await serialized.arrayBuffer();
-					xhr.setRequestHeader("content-type", type);
+					// an explicit Content-Type wins, as it does for a native FormData body
+					if (ctx.this[PENDING] && !hasType) {
+						xhr.setRequestHeader("content-type", type);
+					}
 				})().then(
-					() => ctx.call(),
 					() => {
+						if (!ctx.this[PENDING]) return;
+						ctx.this[PENDING] = false;
+						ctx.call();
+					},
+					() => {
+						if (!ctx.this[PENDING]) return;
+						ctx.this[PENDING] = false;
 						ctx.args[0] = form;
 						ctx.call();
 					}
