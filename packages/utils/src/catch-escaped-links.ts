@@ -52,9 +52,15 @@ export class CatchEscapedLinksPlugin extends ManagedPlugin {
 			if (!needsShell(status, headers)) return;
 
 			void props.response.body?.cancel().catch(() => {});
-			props.response = BareResponse.fromNativeResponse(
+			const placeholder = BareResponse.fromNativeResponse(
 				new Response(null, { status: 204 })
 			);
+			// The cookie pipeline reads the raw headers once this hook has run, and
+			// the shell's own request must see any session cookie this one set.
+			placeholder.rawHeaders = props.response.rawHeaders.filter(([name]) =>
+				/^set-cookie2?$/i.test(name)
+			);
+			props.response = placeholder;
 			this.pending.add(context.parsed);
 		});
 		this.tap(frame.hooks.fetch.response, (context, props) => {
