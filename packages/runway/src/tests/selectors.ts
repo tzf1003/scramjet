@@ -52,6 +52,17 @@ assert(
 		document.querySelector('a[href="https://example.com/moved"]') === added,
 	"the selector should follow a changed href"
 );
+
+const input = document.createElement("input");
+input.type = "image";
+input.src = "https://example.com/old.png";
+input.src = "https://example.com/new.png";
+box.append(input);
+assert(
+	input.matches('[src="https://example.com/new.png"]') &&
+		!input.matches('[src="https://example.com/old.png"]'),
+	"assigning input.src should keep the saved value in step"
+);
 pass();
 </script>
 </body>
