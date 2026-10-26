@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createServer } from "vite";
@@ -83,6 +83,29 @@ const vite = await createServer({
 							"sourceOnly=private; Path=/; SameSite=Lax; HttpOnly",
 						]);
 					}
+					if (url.pathname.startsWith("/files/")) {
+						// downloads: a plain file, and one the server names itself
+						const attached = url.pathname === "/files/attached.md";
+						res.setHeader("Content-Type", "application/json");
+						res.end(
+							JSON.stringify({
+								status: 200,
+								headers: [
+									["Content-Type", "text/markdown; charset=utf-8"],
+									...(attached
+										? [
+												[
+													"Content-Disposition",
+													'attachment; filename="server.md"',
+												],
+											]
+										: []),
+								],
+								body: attached ? "# attached\n" : "# plain\n",
+							})
+						);
+						return;
+					}
 					const body = `<!doctype html><title>Navigation fixture</title><h1 id="path">${url.host}${url.pathname}${url.search}</h1>
   <a id="cross" href="https://accounts.example.com/login?next=%2Fhome#part">Cross</a>
   <a id="port" href="https://accounts.example.com:9443/test/?q=port">Port</a>
@@ -94,6 +117,15 @@ const vite = await createServer({
   <a id="redirect" href="/redirect">Redirect</a>
   <form method="post" action="https://unrelated.test/posted"><input name="message" value="hello"><button id="submit">Submit</button></form>
   <button id="script" onclick="location.href='https://unrelated.test/scripted'">Script</button>
+  <a id="dl-plain" href="/files/plain.md" download>Download</a>
+  <a id="dl-named" href="/files/attached.md" download="asked.md">Download named</a>
+  <button id="dl-late" onclick="const a=document.createElement('a');a.href='/files/stale.md';a.download='';a.onclick=()=>{a.href='/files/fresh.md'};a.click()">Download late</button>
+  <button id="dl-flat" onclick="document.getElementById('dl-plain').dispatchEvent(new MouseEvent('click',{cancelable:true}))">Download flat</button>
+  <a id="dl-live" href="/files/stale.md" download onclick="this.href='/files/fresh2.md'">Download live</a>
+  <div onclick="event.stopPropagation()"><a id="dl-stop" href="/files/stale.md" download onclick="this.href='/files/fresh3.md'">Download stopped</a></div>
+  <map name="m"><area id="dl-area" shape="rect" coords="0,0,200,200" href="/files/area.md" download></map>
+  <img usemap="#m" width="200" height="200" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'/%3E">
+  <button id="dl-blob" onclick="const a=document.createElement('a');a.href=window.URL.createObjectURL(new Blob(['# made in the page\\n']));a.download='made.md';document.body.append(a);a.click()">Download blob</button>
   ${url.pathname === "/nested" ? '<iframe src="https://unrelated.test/child"></iframe>' : ""}${url.pathname === "/source" ? '<iframe src="https://seed.example.com/seed"></iframe>' : ""}`;
 					let status = 200;
 					if (url.pathname === "/redirect") {
@@ -229,6 +261,52 @@ try {
 		`XHR file content missing from ${upload3.body.length} byte body`
 	);
 	results.push("file upload keeps its content and multipart boundary");
+	// The browser saves a download link itself, without asking the service
+	// worker, so the proxy URL it would be given leads to the loader page.
+	const saveFrom = async (selector, position) => {
+		const [saved] = await Promise.all([
+			page.waitForEvent("download"),
+			page.frameLocator("#app > iframe").locator(selector).click({ position }),
+		]);
+		return {
+			name: saved.suggestedFilename(),
+			text: await readFile(await saved.path(), "utf8"),
+		};
+	};
+	assert.deepEqual(await saveFrom("#dl-plain"), {
+		name: "plain.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-named"), {
+		name: "server.md",
+		text: "# attached\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-blob"), {
+		name: "made.md",
+		text: "# made in the page\n",
+	});
+	// a click handler may still change where the link points
+	assert.deepEqual(await saveFrom("#dl-late"), {
+		name: "fresh.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-flat"), {
+		name: "plain.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-live"), {
+		name: "fresh2.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-stop"), {
+		name: "fresh3.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("img[usemap]", { x: 50, y: 50 }), {
+		name: "area.md",
+		text: "# plain\n",
+	});
+	results.push("download links save the file, not the proxy loader page");
 	if (process.env.SCRAMJET_NAVIGATION_FOCUS === "upload") {
 		console.log(JSON.stringify({ results, errors }, null, 2));
 		await browser.close();
