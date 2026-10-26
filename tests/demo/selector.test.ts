@@ -29,13 +29,10 @@ test("operators, flags and unquoted values are kept", () => {
 	);
 });
 
-test("formaction and imagesrcset are rewritten too", () => {
+test("formaction is rewritten too", () => {
 	assert.equal(
-		rewriteSelector('button[formaction="/go"], link[imagesrcset*="2x"]'),
-		"button" +
-			pair("formaction", '="/go"') +
-			", link" +
-			pair("imagesrcset", '*="2x"')
+		rewriteSelector('button[formaction="/go"]'),
+		"button" + pair("formaction", '="/go"')
 	);
 });
 
@@ -51,7 +48,8 @@ test("other selectors are returned untouched", () => {
 		'link[rel="stylesheet"]',
 		'[data-href="/x"]',
 		'[title="x"]',
-		'img[srcset*="2x"]', // these setters do not keep the original in step
+		'img[srcset*="2x"]', // lists, and their setters keep no original
+		'link[imagesrcset*="2x"]',
 		"",
 	])
 		assert.equal(rewriteSelector(selector), selector);

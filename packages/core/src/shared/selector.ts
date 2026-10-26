@@ -4,10 +4,10 @@
 // link[rel="stylesheet"][href="https://..."]) compare against that value.
 // A quoted string is matched first so that brackets inside it are left alone.
 // The attribute names are the ones the rewriter points at the proxy and whose
-// property setters keep scramjet-attr-<name> in step (srcset is left out, its
-// setter does not).
+// property setters keep scramjet-attr-<name> in step (srcset and imagesrcset are
+// left out: they hold lists and their setters do not).
 const attributeSelector =
-	/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\[\s*(href|src|action|formaction|imagesrcset|poster|data)\s*([~|^$*]?=)\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|(?:\\.|[^\s\]"'\\])+)(\s+[iIsS])?\s*\]/gi;
+	/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|\[\s*(href|src|action|formaction|poster|data)\s*([~|^$*]?=)\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|(?:\\.|[^\s\]"'\\])+)(\s+[iIsS])?\s*\]/gi;
 
 /**
  * Makes attribute selectors on rewritten URL attributes compare against the

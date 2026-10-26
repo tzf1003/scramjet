@@ -186,10 +186,7 @@ export default function (
 
 	const attrs = Object_keys(attrObject);
 	// the DOM property is camel-cased where the attribute is not
-	const propertyNames: Record<string, string> = {
-		formaction: "formAction",
-		imagesrcset: "imageSrcset",
-	};
+	const propertyNames: Record<string, string> = { formaction: "formAction" };
 
 	for (const attr of attrs) {
 		const prop = propertyNames[attr] ?? attr;
