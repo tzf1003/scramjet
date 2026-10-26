@@ -3,6 +3,11 @@ import { isHtmlMimeType, ScramjetHeaders } from "@/shared";
 import { BareResponse } from "@mercuryworkshop/proxy-transports";
 import { ScramjetFetchParsed } from ".";
 
+/** Whether the response asks to be saved to disk rather than displayed. */
+export function isAttachment(headers: { get(name: string): string | null }) {
+	return /^\s*attachment\b/i.test(headers.get("content-disposition") ?? "");
+}
+
 export function normalizeContentType(
 	parsed: ScramjetFetchParsed,
 	headers: ScramjetHeaders
@@ -12,6 +17,8 @@ export function normalizeContentType(
 	const ct = headers.get("content-type");
 	if (!ct) return;
 	if (!isHtmlMimeType(ct)) return;
+	// an attachment keeps its original bytes, so its charset still applies
+	if (isAttachment(headers)) return;
 
 	headers.set("content-type", "text/html; charset=utf-8");
 }

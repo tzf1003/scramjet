@@ -15,6 +15,7 @@ import {
 	rewriteJs,
 	rewriteWorkers,
 } from "@/shared";
+import { isAttachment } from "./util";
 import { sniffEncoding } from "@/shared/sniffEncoding";
 import { _TextDecoder } from "@/shared/snapshot";
 
@@ -27,7 +28,11 @@ export async function rewriteBody(
 	switch (parsed.destination) {
 		case "iframe":
 		case "document":
-			if (isHtmlMimeType(response.headers.get("content-type") ?? "")) {
+			// a download is saved as the server sent it, not rewritten for display
+			if (
+				isHtmlMimeType(response.headers.get("content-type") ?? "") &&
+				!isAttachment(response.headers)
+			) {
 				const buf = await response.arrayBuffer();
 				const bytes = new NativeUint8Array(buf);
 				const encoding = sniffEncoding(
