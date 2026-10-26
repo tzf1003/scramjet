@@ -5,7 +5,7 @@
  */
 export function needsShell(
 	status: number,
-	headers: { get(name: string): string | null },
+	headers: { get(name: string): string | null }
 ): boolean {
 	// A redirect is followed by the browser and arrives here as its own request.
 	if (status >= 300 && status < 400) return false;

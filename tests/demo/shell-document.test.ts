@@ -18,7 +18,7 @@ test("pages that run scripts are shown inside the shell", () => {
 		assert.equal(
 			needsShell(200, headers({ "content-type": type })),
 			true,
-			type,
+			type
 		);
 	}
 	assert.equal(needsShell(404, headers({ "content-type": "text/html" })), true);
@@ -37,7 +37,7 @@ test("a download is passed through instead of being replaced by the shell", () =
 		assert.equal(
 			needsShell(200, headers({ "content-type": type })),
 			false,
-			type,
+			type
 		);
 	}
 	assert.equal(needsShell(200, headers({})), false);
@@ -55,24 +55,24 @@ test("an attachment is never shown in the shell, even when it is HTML", () => {
 				headers({
 					"content-type": "text/html",
 					"content-disposition": disposition,
-				}),
+				})
 			),
 			false,
-			disposition,
+			disposition
 		);
 	}
 	assert.equal(
 		needsShell(
 			200,
-			headers({ "content-type": "text/html", "content-disposition": "inline" }),
+			headers({ "content-type": "text/html", "content-disposition": "inline" })
 		),
-		true,
+		true
 	);
 });
 
 test("a redirect is left for the browser to follow", () => {
 	assert.equal(
 		needsShell(302, headers({ "content-type": "text/html" })),
-		false,
+		false
 	);
 });
