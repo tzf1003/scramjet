@@ -29,6 +29,16 @@ test("operators, flags and unquoted values are kept", () => {
 	);
 });
 
+test("formaction and imagesrcset are rewritten too", () => {
+	assert.equal(
+		rewriteSelector('button[formaction="/go"], link[imagesrcset*="2x"]'),
+		"button" +
+			pair("formaction", '="/go"') +
+			", link" +
+			pair("imagesrcset", '*="2x"')
+	);
+});
+
 test("an escaped bracket stays inside an unquoted value", () => {
 	assert.equal(rewriteSelector("[data=foo\\]bar]"), pair("data", "=foo\\]bar"));
 });
@@ -42,8 +52,6 @@ test("other selectors are returned untouched", () => {
 		'[data-href="/x"]',
 		'[title="x"]',
 		'img[srcset*="2x"]', // these setters do not keep the original in step
-		'button[formaction="/go"]',
-		'link[imagesrcset*="2x"]',
 		"",
 	])
 		assert.equal(rewriteSelector(selector), selector);

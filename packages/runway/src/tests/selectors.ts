@@ -63,6 +63,16 @@ assert(
 		!input.matches('[src="https://example.com/old.png"]'),
 	"assigning input.src should keep the saved value in step"
 );
+
+const button = document.createElement("button");
+button.setAttribute("formaction", "https://example.com/old");
+button.formAction = "https://example.com/new";
+box.append(button);
+assert(
+	button.matches('[formaction="https://example.com/new"]') &&
+		!button.matches('[formaction="https://example.com/old"]'),
+	"assigning formAction should keep the saved value in step"
+);
 pass();
 </script>
 </body>

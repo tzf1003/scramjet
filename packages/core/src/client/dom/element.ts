@@ -185,16 +185,22 @@ export default function (
 	];
 
 	const attrs = Object_keys(attrObject);
+	// the DOM property is camel-cased where the attribute is not
+	const propertyNames: Record<string, string> = {
+		formaction: "formAction",
+		imagesrcset: "imageSrcset",
+	};
 
 	for (const attr of attrs) {
+		const prop = propertyNames[attr] ?? attr;
 		for (const element of attrObject[attr]) {
 			const descriptor = client.natives.call(
 				"Object.getOwnPropertyDescriptor",
 				null,
 				element.prototype,
-				attr
+				prop
 			);
-			Object_defineProperty(element.prototype, attr, {
+			Object_defineProperty(element.prototype, prop, {
 				get() {
 					if (["src", "data", "href", "action", "formaction"].includes(attr)) {
 						return unrewriteUrl(descriptor.get.call(this), client.context);
