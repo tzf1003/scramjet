@@ -24,9 +24,13 @@ test("operators, flags and unquoted values are kept", () => {
 		"a" + pair("href", '$=".pdf" i', "HREF")
 	);
 	assert.equal(
-		rewriteSelector('img[srcset*="2x"], form[action="/go"]'),
-		"img" + pair("srcset", '*="2x"') + ", form" + pair("action", '="/go"')
+		rewriteSelector('img[src*="2x"], form[action="/go"]'),
+		"img" + pair("src", '*="2x"') + ", form" + pair("action", '="/go"')
 	);
+});
+
+test("an escaped bracket stays inside an unquoted value", () => {
+	assert.equal(rewriteSelector("[data=foo\\]bar]"), pair("data", "=foo\\]bar"));
 });
 
 test("other selectors are returned untouched", () => {
@@ -37,6 +41,7 @@ test("other selectors are returned untouched", () => {
 		'link[rel="stylesheet"]',
 		'[data-href="/x"]',
 		'[title="x"]',
+		'img[srcset*="2x"]', // its property setter does not keep the original
 		"",
 	])
 		assert.equal(rewriteSelector(selector), selector);
