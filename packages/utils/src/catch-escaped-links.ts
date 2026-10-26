@@ -48,8 +48,6 @@ export class CatchEscapedLinksPlugin extends ManagedPlugin {
 		this.tap(frame.hooks.fetch.preresponse, (context, props) => {
 			if (context.parsed.destination !== "document") return;
 			if (!["GET", "HEAD"].includes(context.request.method)) return;
-			// blob: and data: documents only exist for the page that made them
-			if (!["http:", "https:"].includes(context.parsed.url.protocol)) return;
 			const { status, headers } = props.response;
 			if (!needsShell(status, headers)) return;
 
