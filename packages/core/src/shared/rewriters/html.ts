@@ -261,8 +261,25 @@ function rewriteHtmlInner(
 				`detected quirky document structure parsing @ ${meta.origin.href}!`
 			);
 			// there's weird stuff going on with the document that could result in page scripts being loaded before our inject scripts
-			// so inject them at position 0
-			handler.root.children.unshift(...injectScripts);
+			// so inject them at the top, but after the doctype: anything ahead of it
+			// drops the document into quirks mode and the page lays out differently
+			let at = 0;
+			for (let i = 0; i < handler.root.children.length; i++) {
+				const child = handler.root.children[i];
+				if (
+					child.type === ElementType.Directive &&
+					/^!doctype/i.test((child as { name: string }).name)
+				) {
+					at = i + 1;
+					break;
+				}
+				if (
+					child.type !== ElementType.Text &&
+					child.type !== ElementType.Comment
+				)
+					break;
+			}
+			handler.root.children.splice(at, 0, ...injectScripts);
 		} else {
 			if (!headElement) {
 				headElement = new Element("head", {}, []);
