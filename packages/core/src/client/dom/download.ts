@@ -159,7 +159,8 @@ export default function (client: ScramjetClient, self: Self) {
 	// The page's handlers, on the link or delegated to an ancestor, may still
 	// change where it points, so wait for them: act in the last bubble listener
 	// the event reaches. That is the one on the window, unless a handler stops
-	// the propagation, which makes it the one on the node that stopped it.
+	// the propagation, which makes it the one on the node that stopped it, or
+	// the link's own when the event does not bubble.
 	client.natives.call(
 		"EventTarget.prototype.addEventListener",
 		self,
@@ -181,7 +182,12 @@ export default function (client: ScramjetClient, self: Self) {
 			};
 			const listener = () => {
 				if (finished) return;
-				if (!event.cancelBubble && event.currentTarget !== self) return;
+				if (
+					event.bubbles &&
+					!event.cancelBubble &&
+					event.currentTarget !== self
+				)
+					return;
 				finished = true;
 				cleanup();
 				takeOver(event, anchor);

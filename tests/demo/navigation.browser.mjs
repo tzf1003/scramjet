@@ -120,6 +120,7 @@ const vite = await createServer({
   <a id="dl-plain" href="/files/plain.md" download>Download</a>
   <a id="dl-named" href="/files/attached.md" download="asked.md">Download named</a>
   <button id="dl-late" onclick="const a=document.createElement('a');a.href='/files/stale.md';a.download='';a.onclick=()=>{a.href='/files/fresh.md'};a.click()">Download late</button>
+  <button id="dl-flat" onclick="document.getElementById('dl-plain').dispatchEvent(new MouseEvent('click',{cancelable:true}))">Download flat</button>
   <a id="dl-live" href="/files/stale.md" download onclick="this.href='/files/fresh2.md'">Download live</a>
   <div onclick="event.stopPropagation()"><a id="dl-stop" href="/files/stale.md" download onclick="this.href='/files/fresh3.md'">Download stopped</a></div>
   <map name="m"><area id="dl-area" shape="rect" coords="0,0,200,200" href="/files/area.md" download></map>
@@ -287,6 +288,10 @@ try {
 	// a click handler may still change where the link points
 	assert.deepEqual(await saveFrom("#dl-late"), {
 		name: "fresh.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-flat"), {
+		name: "plain.md",
 		text: "# plain\n",
 	});
 	assert.deepEqual(await saveFrom("#dl-live"), {
