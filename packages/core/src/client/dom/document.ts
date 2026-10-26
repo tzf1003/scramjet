@@ -2,6 +2,7 @@ import { IncrementalHtmlRewriter, rewriteHtml } from "@rewriters/html";
 import { ScramjetClient } from "@client/index";
 import { String, _URL } from "@/shared/snapshot";
 import { createReferrerString } from "@/fetch/util";
+import { rewriteSelector } from "@/shared/selector";
 
 export default function (client: ScramjetClient, _self: Self) {
 	function resetDocumentWriter(document: Document) {
@@ -125,6 +126,26 @@ export default function (client: ScramjetClient, _self: Self) {
 			);
 		},
 	});
+
+	client.Proxy(
+		[
+			"Document.prototype.querySelector",
+			"Document.prototype.querySelectorAll",
+			"DocumentFragment.prototype.querySelector",
+			"DocumentFragment.prototype.querySelectorAll",
+			"Element.prototype.querySelector",
+			"Element.prototype.querySelectorAll",
+			"Element.prototype.matches",
+			"Element.prototype.webkitMatchesSelector",
+			"Element.prototype.closest",
+		],
+		{
+			apply(ctx) {
+				if (typeof ctx.args[0] === "string")
+					ctx.args[0] = rewriteSelector(ctx.args[0]);
+			},
+		}
+	);
 
 	client.Proxy(
 		["Document.prototype.querySelector", "Document.prototype.querySelectorAll"],
