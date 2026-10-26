@@ -27,6 +27,19 @@ test("an extended filename wins and is decoded", () => {
 	);
 });
 
+test("an extended filename in latin1 is decoded by its charset", () => {
+	assert.equal(
+		dispositionFilename("attachment; filename*=ISO-8859-1''caf%E9.txt"),
+		"café.txt"
+	);
+	assert.equal(
+		dispositionFilename(
+			"attachment; filename=\"fallback.txt\"; filename*=KOI8-R''%C1.txt"
+		),
+		"fallback.txt"
+	);
+});
+
 test("a header without a name gives none", () => {
 	assert.equal(dispositionFilename(null), undefined);
 	assert.equal(dispositionFilename(""), undefined);

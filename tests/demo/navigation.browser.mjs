@@ -119,6 +119,9 @@ const vite = await createServer({
   <button id="script" onclick="location.href='https://unrelated.test/scripted'">Script</button>
   <a id="dl-plain" href="/files/plain.md" download>Download</a>
   <a id="dl-named" href="/files/attached.md" download="asked.md">Download named</a>
+  <button id="dl-late" onclick="const a=document.createElement('a');a.href='/files/stale.md';a.download='';a.onclick=()=>{a.href='/files/fresh.md'};a.click()">Download late</button>
+  <map name="m"><area id="dl-area" shape="rect" coords="0,0,200,200" href="/files/area.md" download></map>
+  <img usemap="#m" width="200" height="200" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'/%3E">
   <button id="dl-blob" onclick="const a=document.createElement('a');a.href=window.URL.createObjectURL(new Blob(['# made in the page\\n']));a.download='made.md';document.body.append(a);a.click()">Download blob</button>
   ${url.pathname === "/nested" ? '<iframe src="https://unrelated.test/child"></iframe>' : ""}${url.pathname === "/source" ? '<iframe src="https://seed.example.com/seed"></iframe>' : ""}`;
 					let status = 200;
@@ -257,10 +260,10 @@ try {
 	results.push("file upload keeps its content and multipart boundary");
 	// The browser saves a download link itself, without asking the service
 	// worker, so the proxy URL it would be given leads to the loader page.
-	const saveFrom = async (selector) => {
+	const saveFrom = async (selector, position) => {
 		const [saved] = await Promise.all([
 			page.waitForEvent("download"),
-			page.frameLocator("#app > iframe").locator(selector).click(),
+			page.frameLocator("#app > iframe").locator(selector).click({ position }),
 		]);
 		return {
 			name: saved.suggestedFilename(),
@@ -278,6 +281,15 @@ try {
 	assert.deepEqual(await saveFrom("#dl-blob"), {
 		name: "made.md",
 		text: "# made in the page\n",
+	});
+	// a click handler may still change where the link points
+	assert.deepEqual(await saveFrom("#dl-late"), {
+		name: "fresh.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("img[usemap]", { x: 50, y: 50 }), {
+		name: "area.md",
+		text: "# plain\n",
 	});
 	results.push("download links save the file, not the proxy loader page");
 	if (process.env.SCRAMJET_NAVIGATION_FOCUS === "upload") {

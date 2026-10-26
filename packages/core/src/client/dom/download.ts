@@ -19,11 +19,17 @@ import {
 export default function (client: ScramjetClient, self: Self) {
 	if (!self.HTMLAnchorElement) return;
 
+	// <area> takes part in downloads the same way <a> does
+	type Link = HTMLAnchorElement | HTMLAreaElement;
+	const isLink = (node: unknown): node is Link =>
+		client.box.instanceof(node, "HTMLAnchorElement") ||
+		client.box.instanceof(node, "HTMLAreaElement");
+
 	// links this module made itself, which must reach the browser untouched
 	const ours = new _WeakSet<object>();
 	const FETCH_ERROR = "scramjet: could not fetch the download";
 
-	const isDownload = (anchor: HTMLAnchorElement) =>
+	const isDownload = (anchor: Link) =>
 		client.natives.call("Element.prototype.hasAttribute", anchor, "download");
 
 	function saveNatively(url: string, name: string) {
@@ -72,7 +78,7 @@ export default function (client: ScramjetClient, self: Self) {
 	 * it over, "navigate" when the link should behave as a plain one, undefined
 	 * when it is none of our business.
 	 */
-	function plan(anchor: HTMLAnchorElement) {
+	function plan(anchor: Link) {
 		if (ours.has(anchor) || !isDownload(anchor)) return undefined;
 
 		// the address as the page sees it, whatever the proxy made of the attribute
@@ -95,13 +101,16 @@ export default function (client: ScramjetClient, self: Self) {
 		if (!String_startsWith(href, "http:") && !String_startsWith(href, "https:"))
 			return undefined;
 
+		// an <area> reports the address it was rewritten to, an <a> the real one
+		const real = client.unrewriteUrl(href);
+
 		// the browser only honors download for a link to the page's own origin;
 		// to anything else it navigates, which the worker can serve
-		if (new _URL(href).origin !== client.url.origin) return "navigate" as const;
+		if (new _URL(real).origin !== client.url.origin) return "navigate" as const;
 
 		return {
 			save: () =>
-				void saveThroughProxy(client.rewriteUrl(href), wanted).catch((error) =>
+				void saveThroughProxy(client.rewriteUrl(real), wanted).catch((error) =>
 					client.natives.call("console.error", self.console, error)
 				),
 		};
@@ -109,7 +118,7 @@ export default function (client: ScramjetClient, self: Self) {
 
 	// Browsers navigate to a cross-origin download link instead of saving it, so
 	// do the same: take the attribute off for the click and put it back after.
-	function withoutDownload(anchor: HTMLAnchorElement, click?: () => void) {
+	function withoutDownload(anchor: Link) {
 		const value = client.natives.call(
 			"Element.prototype.getAttribute",
 			anchor,
@@ -120,23 +129,31 @@ export default function (client: ScramjetClient, self: Self) {
 			anchor,
 			"download"
 		);
-		const restore = () =>
-			client.natives.call(
-				"Element.prototype.setAttribute",
-				anchor,
-				"download",
-				value ?? ""
-			);
-		if (click) {
-			try {
-				click();
-			} finally {
-				restore();
-			}
-		} else {
-			// the default action of a click runs once its dispatch has finished
-			self.setTimeout(restore, 0);
+		// the default action of a click runs once its dispatch has finished
+		self.setTimeout(
+			() =>
+				client.natives.call(
+					"Element.prototype.setAttribute",
+					anchor,
+					"download",
+					value ?? ""
+				),
+			0
+		);
+	}
+
+	// Runs once the page's own handlers have had their say, so a handler that
+	// changes the link's address or name is honored.
+	function takeOver(event: Event, anchor: Link) {
+		if (event.defaultPrevented) return;
+		const action = plan(anchor);
+		if (!action) return;
+		if (action === "navigate") {
+			withoutDownload(anchor);
+			return;
 		}
+		event.preventDefault();
+		action.save();
 	}
 
 	client.natives.call(
@@ -144,40 +161,41 @@ export default function (client: ScramjetClient, self: Self) {
 		self,
 		"click",
 		(event: MouseEvent) => {
-			if (event.defaultPrevented) return;
 			const path = client.natives.call("Event.prototype.composedPath", event);
-			const anchor = path.find((node) =>
-				client.box.instanceof(node, "HTMLAnchorElement")
-			) as HTMLAnchorElement | undefined;
-			if (!anchor) return;
-
-			const action = plan(anchor);
-			if (!action) return;
-			if (action === "navigate") {
-				withoutDownload(anchor);
-				return;
-			}
-			event.preventDefault();
-			action.save();
+			const anchor = path.find(isLink);
+			if (anchor) takeOver(event, anchor);
 		},
 		true
 	);
 
-	// a script can click a link that is not in the document, which no listener
-	// sees, so the call itself has to be caught as well
+	// A link that is not in the document is clicked without any listener on the
+	// window seeing it, so listen on the link itself for the length of the call.
+	// Added now, it runs after the handlers the page registered earlier.
 	client.Proxy("HTMLElement.prototype.click", {
 		apply(ctx) {
-			if (!client.box.instanceof(ctx.this, "HTMLAnchorElement")) return;
 			// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
-			const anchor = ctx.this as HTMLAnchorElement;
+			if (!isLink(ctx.this)) return;
+			// eslint-disable-next-line scramjet-core/no-poisoned-ctx-value
+			const anchor = ctx.this;
+			if (anchor.isConnected) return;
 
-			const action = plan(anchor);
-			if (!action) return;
-			if (action === "navigate") {
-				withoutDownload(anchor, () => void ctx.call());
-				return;
+			const listener = (event: Event) => takeOver(event, anchor);
+			client.natives.call(
+				"EventTarget.prototype.addEventListener",
+				anchor,
+				"click",
+				listener
+			);
+			try {
+				ctx.call();
+			} finally {
+				client.natives.call(
+					"EventTarget.prototype.removeEventListener",
+					anchor,
+					"click",
+					listener
+				);
 			}
-			action.save();
 			return ctx.return(undefined);
 		},
 	});
