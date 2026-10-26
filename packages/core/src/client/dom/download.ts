@@ -156,6 +156,10 @@ export default function (client: ScramjetClient, self: Self) {
 		action.save();
 	}
 
+	// The page's handlers, on the link or delegated to an ancestor, may still
+	// change where it points, so wait for them: act in the last bubble listener
+	// the event reaches. That is the one on the window, unless a handler stops
+	// the propagation, which makes it the one on the node that stopped it.
 	client.natives.call(
 		"EventTarget.prototype.addEventListener",
 		self,
@@ -163,7 +167,34 @@ export default function (client: ScramjetClient, self: Self) {
 		(event: MouseEvent) => {
 			const path = client.natives.call("Event.prototype.composedPath", event);
 			const anchor = path.find(isLink);
-			if (anchor) takeOver(event, anchor);
+			if (!anchor || ours.has(anchor) || !isDownload(anchor)) return;
+
+			let finished = false;
+			const cleanup = () => {
+				for (const node of path)
+					client.natives.call(
+						"EventTarget.prototype.removeEventListener",
+						node,
+						"click",
+						listener
+					);
+			};
+			const listener = () => {
+				if (finished) return;
+				if (!event.cancelBubble && event.currentTarget !== self) return;
+				finished = true;
+				cleanup();
+				takeOver(event, anchor);
+			};
+			for (const node of path)
+				client.natives.call(
+					"EventTarget.prototype.addEventListener",
+					node,
+					"click",
+					listener
+				);
+			// the dispatch is over by then, whatever happened to it
+			self.setTimeout(cleanup, 0);
 		},
 		true
 	);

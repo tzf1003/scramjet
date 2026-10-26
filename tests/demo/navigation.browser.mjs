@@ -120,6 +120,8 @@ const vite = await createServer({
   <a id="dl-plain" href="/files/plain.md" download>Download</a>
   <a id="dl-named" href="/files/attached.md" download="asked.md">Download named</a>
   <button id="dl-late" onclick="const a=document.createElement('a');a.href='/files/stale.md';a.download='';a.onclick=()=>{a.href='/files/fresh.md'};a.click()">Download late</button>
+  <a id="dl-live" href="/files/stale.md" download onclick="this.href='/files/fresh2.md'">Download live</a>
+  <div onclick="event.stopPropagation()"><a id="dl-stop" href="/files/stale.md" download onclick="this.href='/files/fresh3.md'">Download stopped</a></div>
   <map name="m"><area id="dl-area" shape="rect" coords="0,0,200,200" href="/files/area.md" download></map>
   <img usemap="#m" width="200" height="200" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'/%3E">
   <button id="dl-blob" onclick="const a=document.createElement('a');a.href=window.URL.createObjectURL(new Blob(['# made in the page\\n']));a.download='made.md';document.body.append(a);a.click()">Download blob</button>
@@ -285,6 +287,14 @@ try {
 	// a click handler may still change where the link points
 	assert.deepEqual(await saveFrom("#dl-late"), {
 		name: "fresh.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-live"), {
+		name: "fresh2.md",
+		text: "# plain\n",
+	});
+	assert.deepEqual(await saveFrom("#dl-stop"), {
+		name: "fresh3.md",
 		text: "# plain\n",
 	});
 	assert.deepEqual(await saveFrom("img[usemap]", { x: 50, y: 50 }), {
