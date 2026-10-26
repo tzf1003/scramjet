@@ -119,6 +119,7 @@ export default function (client: ScramjetClient, self: Self) {
 	// Browsers navigate to a cross-origin download link instead of saving it, so
 	// do the same: take the attribute off for the click and put it back after.
 	function withoutDownload(anchor: Link) {
+		let restored = false;
 		const value = client.natives.call(
 			"Element.prototype.getAttribute",
 			anchor,
@@ -129,17 +130,19 @@ export default function (client: ScramjetClient, self: Self) {
 			anchor,
 			"download"
 		);
+		const restore = () => {
+			if (restored) return;
+			restored = true;
+			client.natives.call(
+				"Element.prototype.setAttribute",
+				anchor,
+				"download",
+				value ?? ""
+			);
+		};
 		// the default action of a click runs once its dispatch has finished
-		self.setTimeout(
-			() =>
-				client.natives.call(
-					"Element.prototype.setAttribute",
-					anchor,
-					"download",
-					value ?? ""
-				),
-			0
-		);
+		self.setTimeout(restore, 0);
+		return restore;
 	}
 
 	// Runs once the page's own handlers have had their say, so a handler that
@@ -148,10 +151,7 @@ export default function (client: ScramjetClient, self: Self) {
 		if (event.defaultPrevented) return;
 		const action = plan(anchor);
 		if (!action) return;
-		if (action === "navigate") {
-			withoutDownload(anchor);
-			return;
-		}
+		if (action === "navigate") return withoutDownload(anchor);
 		event.preventDefault();
 		action.save();
 	}
@@ -210,7 +210,11 @@ export default function (client: ScramjetClient, self: Self) {
 			const anchor = ctx.this;
 			if (anchor.isConnected) return;
 
-			const listener = (event: Event) => takeOver(event, anchor);
+			// a click() on a link outside the document is over when the call returns
+			let restore: (() => void) | undefined;
+			const listener = (event: Event) => {
+				restore = takeOver(event, anchor);
+			};
 			client.natives.call(
 				"EventTarget.prototype.addEventListener",
 				anchor,
@@ -220,6 +224,7 @@ export default function (client: ScramjetClient, self: Self) {
 			try {
 				ctx.call();
 			} finally {
+				restore?.();
 				client.natives.call(
 					"EventTarget.prototype.removeEventListener",
 					anchor,
