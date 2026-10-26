@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { rewriteSelector } from "../../packages/core/src/shared/selector.ts";
 
-const pair = (name: string, test: string) =>
-	`:is([scramjet-attr-${name}${test}],:not([scramjet-attr-${name}])[${name}${test}])`;
+const pair = (name: string, test: string, written = name) =>
+	`:is([scramjet-attr-${name}${test}],:not([scramjet-attr-${name}])[${written}${test}])`;
 
 test("an href lookup also matches the value the page set", () => {
 	// how React finds an existing stylesheet before it inserts a new one
@@ -21,7 +21,7 @@ test("operators, flags and unquoted values are kept", () => {
 	assert.equal(rewriteSelector("a[href^=http]"), "a" + pair("href", "^=http"));
 	assert.equal(
 		rewriteSelector('a[ HREF $= ".pdf" i ]'),
-		"a" + pair("href", '$=".pdf" i')
+		"a" + pair("href", '$=".pdf" i', "HREF")
 	);
 	assert.equal(
 		rewriteSelector('img[srcset*="2x"], form[action="/go"]'),

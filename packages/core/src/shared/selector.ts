@@ -26,10 +26,12 @@ export function rewriteSelector(selector: string): string {
 			flag = ""
 		) => {
 			if (!name) return match;
-			name = name.toLowerCase();
 			const test = `${operator}${value}${flag}`;
+			const original = `scramjet-attr-${name.toLowerCase()}`;
 
-			return `:is([scramjet-attr-${name}${test}],:not([scramjet-attr-${name}])[${name}${test}])`;
+			// The page's own name is kept for an element that was never rewritten,
+			// since attribute names in an XML document are case sensitive.
+			return `:is([${original}${test}],:not([${original}])[${name}${test}])`;
 		}
 	);
 }

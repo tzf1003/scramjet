@@ -141,20 +141,10 @@ export default function (client: ScramjetClient, _self: Self) {
 		],
 		{
 			apply(ctx) {
-				if (typeof ctx.args[0] === "string")
-					ctx.args[0] = rewriteSelector(ctx.args[0]);
-			},
-		}
-	);
-
-	client.Proxy(
-		["Document.prototype.querySelector", "Document.prototype.querySelectorAll"],
-		{
-			apply(ctx) {
-				ctx.args[0] = String(ctx.args[0]).replace(
-					/((?:^|\s)\b\w+\[(?:src|href|data-href))[\^]?(=['"]?(?:https?[:])?\/\/)/,
-					"$1*$2"
-				);
+				// Convert once here, so a String object or anything else the browser
+				// would stringify is rewritten too.
+				if (ctx.args.length && typeof ctx.args[0] !== "symbol")
+					ctx.args[0] = rewriteSelector(String(ctx.args[0]));
 			},
 		}
 	);
