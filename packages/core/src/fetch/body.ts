@@ -27,7 +27,13 @@ export async function rewriteBody(
 	switch (parsed.destination) {
 		case "iframe":
 		case "document":
-			if (isHtmlMimeType(response.headers.get("content-type") ?? "")) {
+			// a download is saved as the server sent it, not rewritten for display
+			if (
+				isHtmlMimeType(response.headers.get("content-type") ?? "") &&
+				!/^\s*attachment\b/i.test(
+					response.headers.get("content-disposition") ?? ""
+				)
+			) {
 				const buf = await response.arrayBuffer();
 				const bytes = new NativeUint8Array(buf);
 				const encoding = sniffEncoding(
