@@ -41,7 +41,9 @@ test("other selectors are returned untouched", () => {
 		'link[rel="stylesheet"]',
 		'[data-href="/x"]',
 		'[title="x"]',
-		'img[srcset*="2x"]', // its property setter does not keep the original
+		'img[srcset*="2x"]', // these setters do not keep the original in step
+		'button[formaction="/go"]',
+		'link[imagesrcset*="2x"]',
 		"",
 	])
 		assert.equal(rewriteSelector(selector), selector);
