@@ -1,4 +1,4 @@
-import { ScramjetHeaders } from "@mercuryworkshop/scramjet";
+import { BareResponse, ScramjetHeaders } from "@mercuryworkshop/scramjet";
 import { ManagedPlugin } from "@mercuryworkshop/scramjet-controller";
 import type { Frame } from "@mercuryworkshop/scramjet-controller";
 import { needsShell } from "./shell-document";
@@ -9,7 +9,7 @@ import { needsShell } from "./shell-document";
  * give a callback telling it how to redirect back to the proxy shell.
  *
  * Downloads reach the worker as top-level navigations too, so a GET is only
- * redirected once its response turns out to be a page. A file, or anything sent
+ * redirected once the response headers show a page. A file, or anything sent
  * as an attachment, is passed through; redirecting it would save the shell's
  * loading page under the file's name.
  */
@@ -17,6 +17,9 @@ export class CatchEscapedLinksPlugin extends ManagedPlugin {
 	constructor(private toLocation: (url: URL) => string | URL) {
 		super("catch-escaped-links", []);
 	}
+
+	// Requests whose response headers called for the shell, until the redirect is set.
+	private pending = new WeakSet<object>();
 
 	private redirect(url: URL) {
 		return {
@@ -41,12 +44,23 @@ export class CatchEscapedLinksPlugin extends ManagedPlugin {
 			},
 			{ after: ["scramjet-http-cache"] }
 		);
-		this.tap(frame.hooks.fetch.response, (context, props) => {
+		// Decide on the headers alone, before the body is read and rewritten.
+		this.tap(frame.hooks.fetch.preresponse, (context, props) => {
 			if (context.parsed.destination !== "document") return;
 			if (!["GET", "HEAD"].includes(context.request.method)) return;
 			// blob: and data: documents only exist for the page that made them
 			if (!["http:", "https:"].includes(context.parsed.url.protocol)) return;
-			if (!needsShell(props.response.status, props.response.headers)) return;
+			const { status, headers } = props.response;
+			if (!needsShell(status, headers)) return;
+
+			void props.response.body?.cancel().catch(() => {});
+			props.response = BareResponse.fromNativeResponse(
+				new Response(null, { status: 204 })
+			);
+			this.pending.add(context.parsed);
+		});
+		this.tap(frame.hooks.fetch.response, (context, props) => {
+			if (!this.pending.delete(context.parsed)) return;
 
 			props.response = this.redirect(context.parsed.url);
 		});
